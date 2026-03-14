@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Read(//c/Users/deepv/Desktop/Projects//**)"
+      "Read(//c/Users/deepv/Desktop/Projects//**)",
+      "Bash(python3 -c \":*)",
+      "Bash(for dir:*)",
+      "Bash(do touch:*)",
+      "Bash(done)"
     ]
   }
 }

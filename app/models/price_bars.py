@@ -1,0 +1,30 @@
+from app.extensions import db
+
+
+class PriceBar(db.Model):
+    __tablename__ = 'price_bars'
+
+    id = db.Column(db.BigInteger, primary_key=True)
+    symbol = db.Column(db.String(10), nullable=False)
+    timeframe = db.Column(db.String(5), nullable=False, default='1d')
+    timestamp = db.Column(db.DateTime(timezone=True), nullable=False)
+    open = db.Column(db.Numeric(12, 4), nullable=False)
+    high = db.Column(db.Numeric(12, 4), nullable=False)
+    low = db.Column(db.Numeric(12, 4), nullable=False)
+    close = db.Column(db.Numeric(12, 4), nullable=False)
+    volume = db.Column(db.BigInteger, nullable=False)
+    vwap = db.Column(db.Numeric(12, 4))
+    trade_count = db.Column(db.Integer)
+    is_synthetic = db.Column(db.Boolean, default=False)
+    source = db.Column(db.String(20), default='alpaca')
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            'symbol', 'timeframe', 'timestamp',
+            name='uq_bar_symbol_tf_ts',
+        ),
+        db.Index('ix_price_bars_sym_ts', 'symbol', 'timestamp'),
+    )
+
+    def __repr__(self):
+        return f'<Bar {self.symbol} {self.timeframe} {self.timestamp}>'

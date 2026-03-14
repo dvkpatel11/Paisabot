@@ -112,6 +112,8 @@ See [research/admin_config_reference.md](research/admin_config_reference.md) for
 | [research/risk_framework.md](research/risk_framework.md) | Risk controls, stop-loss ladder, drawdown mitigation strategies |
 | [research/backtesting_results.md](research/backtesting_results.md) | Backtest methodology, walk-forward testing, Monte Carlo, cost model |
 | [research/admin_config_reference.md](research/admin_config_reference.md) | Every admin config parameter with defaults, ranges, Redis keys |
+| [research/production_setup.md](research/production_setup.md) | Gunicorn + eventlet, Nginx, systemd, Docker Compose, PostgreSQL/Redis tuning, Celery production |
+| [research/metatrader_integration.md](research/metatrader_integration.md) | MT5 Python API, ETF CFD availability, Windows constraint, MT5Broker class, position sync |
 
 ## Message Bus Rules
 
