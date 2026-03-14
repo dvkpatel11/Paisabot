@@ -1,0 +1,65 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.env/
+.venv/
+env/
+ENV/
+
+# Environment variables / secrets
+.env
+.env.*
+*.env
+
+# Flask runtime
+instance/
+.webassets-cache
+
+# Logs
+*.log
+
+# Database files
+*.sqlite3
+*.db
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Python packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing / coverage
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS files
+Thumbs.db
+
+# Deployment
+*.pem
+*.key
+
+# Docker
+docker-compose.override.yml
+
+# Node (if frontend assets exist)
+node_modules/
+
+# Cache
+.cache/
