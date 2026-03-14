@@ -4,7 +4,7 @@ from app.extensions import db
 class PerformanceMetric(db.Model):
     __tablename__ = 'performance_metrics'
 
-    id = db.Column(db.BigInteger, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     date = db.Column(db.Date, nullable=False, unique=True, index=True)
     portfolio_value = db.Column(db.Numeric(14, 2))
     daily_return = db.Column(db.Numeric(10, 6))

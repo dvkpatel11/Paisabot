@@ -4,7 +4,7 @@ from app.extensions import db
 class FactorScore(db.Model):
     __tablename__ = 'factor_scores'
 
-    id = db.Column(db.BigInteger, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     symbol = db.Column(db.String(10), nullable=False)
     calc_time = db.Column(db.DateTime(timezone=True), nullable=False)
     trend_score = db.Column(db.Numeric(6, 4))

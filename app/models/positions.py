@@ -4,7 +4,7 @@ from app.extensions import db
 class Position(db.Model):
     __tablename__ = 'positions'
 
-    id = db.Column(db.BigInteger, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     symbol = db.Column(db.String(10), nullable=False, index=True)
     broker = db.Column(db.String(20), nullable=False)
     broker_ref = db.Column(db.String(50))

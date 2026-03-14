@@ -26,7 +26,7 @@ class TestingConfig(BaseConfig):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         'TEST_DATABASE_URL',
-        'postgresql://paisabot:paisabot@localhost:5432/paisabot_test'
+        'sqlite://'  # in-memory SQLite for tests without Docker
     )
     REDIS_URL = os.environ.get('TEST_REDIS_URL', 'redis://localhost:6379/15')
 

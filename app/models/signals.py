@@ -4,7 +4,7 @@ from app.extensions import db
 class Signal(db.Model):
     __tablename__ = 'signals'
 
-    id = db.Column(db.BigInteger, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     symbol = db.Column(db.String(10), nullable=False)
     signal_time = db.Column(db.DateTime(timezone=True), nullable=False)
     composite_score = db.Column(db.Numeric(6, 4), nullable=False)

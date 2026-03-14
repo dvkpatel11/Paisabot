@@ -4,7 +4,7 @@ from app.extensions import db
 class PriceBar(db.Model):
     __tablename__ = 'price_bars'
 
-    id = db.Column(db.BigInteger, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     symbol = db.Column(db.String(10), nullable=False)
     timeframe = db.Column(db.String(5), nullable=False, default='1d')
     timestamp = db.Column(db.DateTime(timezone=True), nullable=False)
