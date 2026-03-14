@@ -1,7 +1,32 @@
 {
   "permissions": {
     "allow": [
-      "Read(//c/Users/deepv/Desktop/Projects//**)"
+      "Read(//c/Users/deepv/Desktop/Projects//**)",
+      "Bash(python3 -c \":*)",
+      "Bash(for dir:*)",
+      "Bash(do touch:*)",
+      "Bash(done)",
+      "Bash(python -m pytest tests/test_data/test_alpaca_provider.py tests/test_data/test_vix_provider.py tests/test_data/test_ingestion.py -v)",
+      "Bash(pip install:*)",
+      "Bash(python -m pytest tests/test_data/test_alpaca_provider.py tests/test_data/test_vix_provider.py -v)",
+      "Bash(python -m pytest tests/test_data/test_alpaca_provider.py -v)",
+      "Bash(python -m pytest tests/test_data/test_vix_provider.py -v)",
+      "Bash(python -m pytest tests/test_data/test_vix_provider.py tests/test_data/test_ingestion.py -v)",
+      "Bash(python -m pytest tests/test_data/test_ingestion.py::TestIngestDailyBars::test_ingest_empty_df -v)",
+      "Bash(python -c \":*)",
+      "Bash(python -m pytest tests/test_data/test_ingestion.py -v)",
+      "Bash(python -m pytest tests/test_data/test_ingestion.py::TestIngestDailyBars::test_ingest_single_bar -v)",
+      "Bash(while IFS=: read file line _)",
+      "Bash(do sed:*)",
+      "Bash(python -m pytest tests/test_data/ -v)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python -m pytest tests/test_factors/ -v)",
+      "Bash(python -m pytest tests/ -v --tb=no)",
+      "Bash(python -m pytest tests/test_factors/ -v --tb=short)",
+      "Bash(python -m pytest tests/ --tb=no -q)",
+      "Bash(python -m pytest tests/test_signals/ -v)",
+      "Bash(python -m pytest tests/ -v --tb=short)",
+      "Bash(pip show:*)"
     ]
   }
 }
