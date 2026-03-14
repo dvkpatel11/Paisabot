@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Factors - Paisabot{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Factor & Signal Explorer</h1>
+</div>
+
+<!-- Signal Ranking -->
+<div class="grid grid-3">
+  <div class="panel panel-full">
+    <div class="panel-header"><h2 class="text-green">LONG</h2></div>
+    <div id="long-signals"></div>
+  </div>
+  <div class="panel panel-full">
+    <div class="panel-header"><h2 class="text-yellow">NEUTRAL</h2></div>
+    <div id="neutral-signals"></div>
+  </div>
+  <div class="panel panel-full">
+    <div class="panel-header"><h2 class="text-red">AVOID</h2></div>
+    <div id="avoid-signals"></div>
+  </div>
+</div>
+
+<!-- Factor Heatmap -->
+<div class="panel panel-full">
+  <div class="panel-header">
+    <h2>Factor Scores Heatmap</h2>
+  </div>
+  <div id="heatmap-chart" style="height:400px"></div>
+</div>
+
+<!-- Per-Symbol Factor History -->
+<div class="panel panel-full">
+  <div class="panel-header">
+    <h2>Factor History</h2>
+    <select id="factor-symbol-select" class="select-input">
+      <option value="">Select ETF...</option>
+    </select>
+  </div>
+  <div id="factor-history-chart" style="height:350px"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const signalCols = [
+    {title: 'Symbol', field: 'symbol', width: 80},
+    {title: 'Score', field: 'composite_score', formatter: PaisaTables.scoreFormatter},
+    {title: 'Regime', field: 'regime'},
+  ];
+
+  PaisaTables.create('long-signals', signalCols);
+  PaisaTables.create('neutral-signals', signalCols);
+  PaisaTables.create('avoid-signals', signalCols);
+
+  // Load signals
+  fetch('/api/signals').then(r => r.json()).then(data => {
+    PaisaTables.setData('long-signals', data.long || []);
+    PaisaTables.setData('neutral-signals', data.neutral || []);
+    PaisaTables.setData('avoid-signals', data.avoid || []);
+  });
+
+  // Load scores for heatmap
+  fetch('/api/scores').then(r => r.json()).then(scores => {
+    const symbols = Object.keys(scores).sort();
+    const factors = ['trend', 'volatility', 'sentiment', 'breadth', 'dispersion', 'correlation', 'liquidity', 'slippage'];
+
+    // Populate symbol selector
+    const select = document.getElementById('factor-symbol-select');
+    symbols.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = s;
+      select.appendChild(opt);
+    });
+
+    // Build heatmap
+    const z = factors.map(f => symbols.map(s => scores[s] ? scores[s][f] || 0 : 0));
+
+    PaisaCharts.heatmap('heatmap-chart', {
+      z: z,
+      x: symbols,
+      y: factors,
+      title: 'Factor Scores (0-1)',
+    });
+  });
+
+  // Symbol history chart
+  document.getElementById('factor-symbol-select').addEventListener('change', function() {
+    const sym = this.value;
+    if (!sym) return;
+
+    fetch('/api/factors/' + sym + '?days=60').then(r => r.json()).then(data => {
+      const factors = data.factors;
+      const traces = ['trend', 'volatility', 'sentiment', 'breadth'].map(f => ({
+        x: factors.dates,
+        y: factors[f],
+        name: f,
+        type: 'scatter',
+        mode: 'lines',
+      }));
+
+      PaisaCharts.timeSeries('factor-history-chart', traces, sym + ' Factor History');
+    });
+  });
+
+  PaisaSocket.on('factor_scores', function(data) {
+    // Refresh heatmap on new scores
+    fetch('/api/scores').then(r => r.json()).then(scores => {
+      const symbols = Object.keys(scores).sort();
+      const factors = ['trend', 'volatility', 'sentiment', 'breadth', 'dispersion', 'correlation', 'liquidity', 'slippage'];
+      const z = factors.map(f => symbols.map(s => scores[s] ? scores[s][f] || 0 : 0));
+      PaisaCharts.heatmap('heatmap-chart', {z, x: symbols, y: factors, title: 'Factor Scores (0-1)'});
+    });
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Sector Rotation - Paisabot{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Sector Rotation</h1>
+</div>
+
+<div class="grid grid-2">
+  <!-- Regime Status -->
+  <div class="panel">
+    <div class="panel-header"><h2>Current Regime</h2></div>
+    <div class="regime-display">
+      <span class="badge badge-lg" id="rotation-regime">--</span>
+      <div class="panel-sub" id="rotation-confidence">confidence --</div>
+    </div>
+  </div>
+
+  <!-- Regime History Timeline -->
+  <div class="panel">
+    <div class="panel-header"><h2>Regime History</h2></div>
+    <div id="regime-timeline" style="height:120px"></div>
+  </div>
+</div>
+
+<!-- Sector Scoreboard -->
+<div class="panel panel-full">
+  <div class="panel-header"><h2>Sector Rankings</h2></div>
+  <div id="sector-chart" style="height:350px"></div>
+</div>
+
+<!-- Correlation Matrix -->
+<div class="panel panel-full">
+  <div class="panel-header"><h2>Sector Correlation</h2></div>
+  <div id="correlation-chart" style="height:400px"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  fetch('/api/regime').then(r => r.json()).then(data => {
+    const badge = document.getElementById('rotation-regime');
+    badge.textContent = data.regime || 'unknown';
+    badge.className = 'badge badge-lg badge-' + PaisaUtils.regimeColor(data.regime);
+    document.getElementById('rotation-confidence').textContent =
+      'confidence ' + ((data.confidence || 0) * 100).toFixed(0) + '%';
+
+    // Regime timeline
+    if (data.history && data.history.length > 0) {
+      const colors = data.history.map(h => PaisaUtils.regimeHex(h.regime));
+      PaisaCharts.bar('regime-timeline', {
+        x: data.history.map(h => h.time),
+        y: data.history.map(() => 1),
+        colors: colors,
+        title: '',
+      });
+    }
+  });
+
+  // Sector scores from signals
+  fetch('/api/signals').then(r => r.json()).then(data => {
+    const allSignals = [...(data.long || []), ...(data.neutral || []), ...(data.avoid || [])];
+    allSignals.sort((a, b) => b.composite_score - a.composite_score);
+
+    PaisaCharts.horizontalBar('sector-chart', {
+      labels: allSignals.map(s => s.symbol),
+      values: allSignals.map(s => s.composite_score),
+      title: 'Composite Score Ranking',
+    });
+  });
+
+  PaisaSocket.on('regime_change', function(data) {
+    const badge = document.getElementById('rotation-regime');
+    badge.textContent = data.to_regime || data.regime;
+    badge.className = 'badge badge-lg badge-' + PaisaUtils.regimeColor(data.to_regime || data.regime);
+  });
+});
+</script>
+{% endblock %}

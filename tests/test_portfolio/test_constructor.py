@@ -9,7 +9,7 @@ from app.portfolio.constructor import PortfolioConstructor
 def _make_prices(symbols, n_days=252, seed=42):
     """Generate synthetic price data for testing."""
     np.random.seed(seed)
-    dates = pd.bdate_range(end=pd.Timestamp.now(), periods=n_days)
+    dates = pd.date_range('2024-01-01', periods=n_days, freq='B')
     data = {}
     for sym in symbols:
         returns = np.random.normal(0.0004, 0.015, n_days)
@@ -122,7 +122,7 @@ class TestPortfolioConstructor:
     def test_insufficient_history(self, constructor, constraints):
         """Short price history falls back to equal weight."""
         np.random.seed(42)
-        dates = pd.bdate_range(end=pd.Timestamp.now(), periods=10)
+        dates = pd.date_range('2025-01-01', periods=10, freq='B')
         prices = pd.DataFrame({
             'SPY': np.random.uniform(100, 110, 10),
             'QQQ': np.random.uniform(100, 110, 10),

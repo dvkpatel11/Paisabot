@@ -1,0 +1,19 @@
+{% extends 'admin/master.html' %}
+{% block body %}
+<h1>Kill Switch Control Panel</h1>
+<p>Toggle kill switches to immediately halt or resume system components.</p>
+
+<div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin:20px 0;">
+  {% for name, active in switches.items() %}
+  <div style="padding:20px; border-radius:8px; background:{{ '#dc3545' if active else '#28a745' }}; color:white; text-align:center;">
+    <h3 style="margin:0 0 8px 0;">{{ name.replace('_', ' ').upper() }}</h3>
+    <p style="font-size:20px; font-weight:bold; margin:0 0 12px 0;">{{ 'ACTIVE' if active else 'OFF' }}</p>
+    <form method="POST" action="{{ url_for('killswitch.toggle', switch_name=name) }}">
+      <button type="submit" style="padding:8px 24px; border:2px solid white; background:transparent; color:white; cursor:pointer; border-radius:4px; font-weight:bold;">
+        {{ 'DEACTIVATE' if active else 'ACTIVATE' }}
+      </button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
