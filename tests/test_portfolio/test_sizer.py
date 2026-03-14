@@ -7,7 +7,7 @@ from app.portfolio.sizer import PositionSizer
 
 def _make_prices(symbols, n_days=120, seed=42, vol=0.015):
     np.random.seed(seed)
-    dates = pd.bdate_range(end=pd.Timestamp.now(), periods=n_days)
+    dates = pd.date_range('2025-01-01', periods=n_days, freq='B')
     data = {}
     for sym in symbols:
         returns = np.random.normal(0.0003, vol, n_days)
@@ -59,7 +59,7 @@ class TestPositionSizer:
         assert result == weights
 
     def test_insufficient_data(self, sizer):
-        dates = pd.bdate_range(end=pd.Timestamp.now(), periods=20)
+        dates = pd.date_range('2025-01-01', periods=20, freq='B')
         prices = pd.DataFrame({
             'SPY': np.random.uniform(100, 110, 20),
             'QQQ': np.random.uniform(100, 110, 20),
@@ -76,7 +76,7 @@ class TestPositionSizer:
         assert vol > 0
 
     def test_estimate_vol_insufficient_data(self, sizer):
-        dates = pd.bdate_range(end=pd.Timestamp.now(), periods=10)
+        dates = pd.date_range('2025-01-01', periods=10, freq='B')
         prices = pd.DataFrame({
             'SPY': np.random.uniform(100, 110, 10),
             'QQQ': np.random.uniform(100, 110, 10),
