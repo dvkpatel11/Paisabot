@@ -1,7 +1,32 @@
 {
   "permissions": {
     "allow": [
-      "WebSearch"
+      "WebSearch",
+      "Bash(python -c \":*)",
+      "WebFetch(domain:databento.com)",
+      "WebFetch(domain:developer.twitter.com)",
+      "WebFetch(domain:docs.x.com)",
+      "WebFetch(domain:metatrader5.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:apewisdom.io)",
+      "WebFetch(domain:praw.readthedocs.io)",
+      "WebFetch(domain:www.cboe.com)",
+      "WebFetch(domain:iexcloud.io)",
+      "WebFetch(domain:redbeat.readthedocs.io)",
+      "WebFetch(domain:flower.readthedocs.io)",
+      "WebFetch(domain:alembic.sqlalchemy.org)",
+      "WebFetch(domain:docs.docker.com)",
+      "WebFetch(domain:www.interactivebrokers.com)",
+      "WebFetch(domain:admiralmarkets.com)",
+      "WebFetch(domain:massive.com)",
+      "WebFetch(domain:icmarkets.com)",
+      "WebFetch(domain:www.exness.com)",
+      "WebFetch(domain:www.supervisord.org)",
+      "WebFetch(domain:certbot.eff.org)",
+      "WebFetch(domain:help.tradier.com)",
+      "WebFetch(domain:tradier.com)",
+      "WebFetch(domain:www.sec.gov)",
+      "WebFetch(domain:api.tradier.com)"
     ]
   }
 }

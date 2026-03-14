@@ -1,0 +1,21 @@
+ticker,name,sector,aum_bn,avg_daily_vol_m,spread_est_bps,liquidity_score,inception_date,options_market
+SPY,SPDR S&P 500 ETF Trust,Broad Market,530.0,25000.0,0.3,1.00,1993-01-22,true
+QQQ,Invesco QQQ Trust,Technology/Broad,250.0,12000.0,0.4,1.00,1999-03-10,true
+IWM,iShares Russell 2000 ETF,Small Cap,70.0,3500.0,0.5,0.98,2000-05-22,true
+XLK,Technology Select Sector SPDR Fund,Technology,65.0,1800.0,0.6,0.97,1998-12-16,true
+XLF,Financial Select Sector SPDR Fund,Financials,45.0,2200.0,0.6,0.97,1998-12-16,true
+XLE,Energy Select Sector SPDR Fund,Energy,35.0,1500.0,0.7,0.96,1998-12-16,true
+XLV,Health Care Select Sector SPDR Fund,Health Care,40.0,1000.0,0.7,0.95,1998-12-16,true
+XLI,Industrial Select Sector SPDR Fund,Industrials,22.0,700.0,0.8,0.93,1998-12-16,true
+XLC,Communication Services SPDR Fund,Communication Services,18.0,600.0,0.8,0.92,2018-06-18,true
+XLY,Consumer Discretionary SPDR Fund,Consumer Discretionary,20.0,650.0,0.8,0.93,1998-12-16,true
+XLP,Consumer Staples SPDR Fund,Consumer Staples,15.0,450.0,0.9,0.91,1998-12-16,true
+XLU,Utilities Select Sector SPDR Fund,Utilities,14.0,400.0,0.9,0.90,1998-12-16,true
+XLRE,Real Estate SPDR Fund,Real Estate,8.0,300.0,1.0,0.88,2015-10-07,true
+XLB,Materials Select Sector SPDR Fund,Materials,7.0,280.0,1.1,0.87,1998-12-16,true
+GDX,VanEck Gold Miners ETF,Materials/Gold,13.0,700.0,1.5,0.89,2006-05-16,true
+EEM,iShares MSCI Emerging Markets ETF,International EM,22.0,800.0,1.0,0.92,2003-04-07,true
+EFA,iShares MSCI EAFE ETF,International Dev,50.0,600.0,0.9,0.91,2001-08-14,true
+TLT,iShares 20+ Year Treasury Bond ETF,Fixed Income,55.0,2000.0,0.5,0.97,2002-07-22,true
+HYG,iShares iBoxx High Yield Corp Bond ETF,Fixed Income,14.0,600.0,1.0,0.89,2007-04-04,true
+GLD,SPDR Gold Trust,Commodities,60.0,900.0,0.6,0.95,2004-11-18,true
