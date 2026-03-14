@@ -35,6 +35,23 @@ def create_app(config_name: str = 'development') -> Flask:
     from app.api import api_bp
     app.register_blueprint(api_bp, url_prefix='/api')
 
+    from app.views import views_bp
+    app.register_blueprint(views_bp)
+
+    # Flask-Admin
+    from app.admin import init_admin
+    init_admin(app)
+
+    # SocketIO handlers
+    from app.streaming.socket_handler import register_socketio_handlers
+    register_socketio_handlers(socketio)
+
+    # Start Redis → SocketIO bridge (only in non-testing)
+    if config_name != 'testing':
+        from app.streaming.redis_bridge import RedisBridge
+        bridge = RedisBridge(ext.redis_client, socketio)
+        bridge.start()
+
     return app
 
 

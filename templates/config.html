@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Configuration - Paisabot{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>System Configuration</h1>
+</div>
+
+<!-- Mode Selector -->
+<div class="panel">
+  <div class="panel-header"><h2>Operational Mode</h2></div>
+  <div class="mode-selector" id="mode-selector">
+    <button class="btn btn-mode" data-mode="research" onclick="setMode('research')">RESEARCH</button>
+    <button class="btn btn-mode" data-mode="simulation" onclick="setMode('simulation')">SIMULATION</button>
+    <button class="btn btn-mode btn-danger-outline" data-mode="live" onclick="setMode('live')">LIVE</button>
+  </div>
+</div>
+
+<!-- Kill Switches -->
+<div class="panel">
+  <div class="panel-header"><h2>Kill Switches</h2></div>
+  <div class="switch-grid" id="config-switches"></div>
+</div>
+
+<!-- Config Tabs -->
+<div class="panel panel-full">
+  <div class="tab-bar" id="config-tabs">
+    <button class="tab active" onclick="showTab('weights', this)">Weights</button>
+    <button class="tab" onclick="showTab('portfolio', this)">Portfolio</button>
+    <button class="tab" onclick="showTab('risk', this)">Risk</button>
+    <button class="tab" onclick="showTab('execution', this)">Execution</button>
+    <button class="tab" onclick="showTab('data', this)">Data</button>
+    <button class="tab" onclick="showTab('universe', this)">Universe</button>
+    <button class="tab" onclick="showTab('schedule', this)">Schedule</button>
+    <button class="tab" onclick="showTab('alerts', this)">Alerts</button>
+    <button class="tab" onclick="showTab('audit', this)">Audit Log</button>
+  </div>
+
+  <div class="tab-content" id="tab-content">
+    <div class="loading">Loading configuration...</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/config.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Load mode
+  fetch('/api/health').then(r => r.json()).then(data => {
+    // Get mode from config
+    fetch('/api/config/system').then(r => r.json()).then(cfg => {
+      const mode = cfg.operational_mode ? cfg.operational_mode.value : 'simulation';
+      document.querySelectorAll('.btn-mode').forEach(b => {
+        b.classList.toggle('active', b.dataset.mode === mode);
+      });
+    });
+
+    // Kill switches
+    const container = document.getElementById('config-switches');
+    container.innerHTML = '';
+    if (data.kill_switches) {
+      Object.entries(data.kill_switches).forEach(([name, active]) => {
+        const div = document.createElement('div');
+        div.className = 'switch-item ' + (active ? 'switch-active' : 'switch-inactive');
+        div.innerHTML = '<span class="switch-name">' + name.replace('_', ' ').toUpperCase() + '</span>' +
+                         '<span class="switch-status">' + (active ? 'ACTIVE' : 'OFF') + '</span>';
+        div.onclick = function() {
+          fetch('/api/control/' + name, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({active: !active}),
+          }).then(() => location.reload());
+        };
+        container.appendChild(div);
+      });
+    }
+  });
+
+  // Show initial tab
+  showTab('weights', document.querySelector('.tab.active'));
+});
+
+function setMode(mode) {
+  let body = {mode: mode};
+  if (mode === 'live') {
+    const confirm = prompt('Type I_CONFIRM_LIVE_TRADING to switch to live mode:');
+    if (confirm !== 'I_CONFIRM_LIVE_TRADING') return;
+    body.confirm = confirm;
+  }
+
+  fetch('/api/config/mode', {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  }).then(r => r.json()).then(data => {
+    if (data.error) { alert(data.error); return; }
+    document.querySelectorAll('.btn-mode').forEach(b => {
+      b.classList.toggle('active', b.dataset.mode === data.mode);
+    });
+  });
+}
+
+function showTab(category, btn) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+
+  if (category === 'audit') {
+    PaisaConfig.loadAudit();
+    return;
+  }
+
+  PaisaConfig.loadCategory(category);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Paisabot{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Dashboard</h1>
+</div>
+
+<!-- Top Row: Summary Panels -->
+<div class="grid grid-4">
+  <div class="panel" id="panel-pnl">
+    <div class="panel-label">Portfolio Value</div>
+    <div class="panel-value" id="portfolio-value">--</div>
+    <div class="panel-sub" id="portfolio-pnl">-- today</div>
+  </div>
+  <div class="panel" id="panel-regime">
+    <div class="panel-label">Market Regime</div>
+    <div class="panel-value">
+      <span class="badge" id="regime-badge">--</span>
+    </div>
+    <div class="panel-sub" id="regime-confidence">confidence --</div>
+  </div>
+  <div class="panel" id="panel-drawdown">
+    <div class="panel-label">Drawdown</div>
+    <div class="panel-value" id="drawdown-value">--%</div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="drawdown-bar" style="width:0%"></div>
+    </div>
+  </div>
+  <div class="panel" id="panel-health">
+    <div class="panel-label">System Health</div>
+    <div class="health-dots" id="health-dots">
+      <span class="health-dot" title="Data">D</span>
+      <span class="health-dot" title="Factors">F</span>
+      <span class="health-dot" title="Signals">S</span>
+      <span class="health-dot" title="Portfolio">P</span>
+      <span class="health-dot" title="Risk">R</span>
+      <span class="health-dot" title="Execution">E</span>
+      <span class="health-dot" title="Dashboard">M</span>
+    </div>
+  </div>
+</div>
+
+<!-- Middle Row: Positions + Orders -->
+<div class="grid grid-2">
+  <div class="panel panel-full">
+    <div class="panel-header">
+      <h2>Open Positions</h2>
+      <span class="badge" id="position-count">0</span>
+    </div>
+    <div id="positions-table"></div>
+  </div>
+  <div class="panel panel-full">
+    <div class="panel-header">
+      <h2>Recent Orders</h2>
+    </div>
+    <div id="orders-table"></div>
+  </div>
+</div>
+
+<!-- Bottom Row: ETF Universe Scores -->
+<div class="panel panel-full">
+  <div class="panel-header">
+    <h2>ETF Universe</h2>
+  </div>
+  <div id="universe-table"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Positions table
+  PaisaTables.create('positions-table', [
+    {title: 'Symbol', field: 'symbol', width: 80},
+    {title: 'Side', field: 'direction', width: 60},
+    {title: 'Entry', field: 'entry_price', formatter: 'money', formatterParams: {precision: 2}},
+    {title: 'Current', field: 'current_price', formatter: 'money', formatterParams: {precision: 2}},
+    {title: 'Weight', field: 'weight', formatter: PaisaTables.pctFormatter},
+    {title: 'P&L', field: 'unrealized_pnl', formatter: PaisaTables.pnlFormatter},
+    {title: 'Sector', field: 'sector'},
+  ]);
+
+  // Orders table
+  PaisaTables.create('orders-table', [
+    {title: 'Symbol', field: 'symbol', width: 80},
+    {title: 'Side', field: 'side', width: 60},
+    {title: 'Notional', field: 'requested_notional', formatter: 'money'},
+    {title: 'Fill', field: 'fill_price', formatter: 'money', formatterParams: {precision: 2}},
+    {title: 'Slip (bps)', field: 'slippage_bps', formatter: PaisaTables.bpsFormatter},
+    {title: 'Status', field: 'status'},
+    {title: 'Time', field: 'trade_time', formatter: PaisaTables.timeFormatter},
+  ]);
+
+  // Universe table
+  PaisaTables.create('universe-table', [
+    {title: 'Symbol', field: 'symbol', width: 80},
+    {title: 'Name', field: 'name'},
+    {title: 'Sector', field: 'sector'},
+    {title: 'AUM ($B)', field: 'aum_bn'},
+    {title: 'ADV ($M)', field: 'avg_daily_vol_m'},
+    {title: 'Spread (bps)', field: 'spread_bps'},
+    {title: 'Liq Score', field: 'liquidity_score'},
+  ]);
+
+  // Load data
+  fetch('/api/portfolio').then(r => r.json()).then(data => {
+    if (data.positions) PaisaTables.setData('positions-table', data.positions);
+    document.getElementById('position-count').textContent = (data.positions || []).length;
+    if (data.n_positions !== undefined) document.getElementById('portfolio-value').textContent = '$' + (data.portfolio_value || '--');
+  });
+
+  fetch('/api/trades?limit=20').then(r => r.json()).then(data => {
+    PaisaTables.setData('orders-table', data);
+  });
+
+  fetch('/api/universe').then(r => r.json()).then(data => {
+    PaisaTables.setData('universe-table', data);
+  });
+
+  fetch('/api/health').then(r => r.json()).then(data => {
+    document.getElementById('nav-mode').textContent = data.kill_switches && data.kill_switches.trading ? 'HALTED' : '';
+  });
+
+  fetch('/api/regime').then(r => r.json()).then(data => {
+    const badge = document.getElementById('regime-badge');
+    badge.textContent = data.regime || 'unknown';
+    badge.className = 'badge badge-' + PaisaUtils.regimeColor(data.regime);
+    document.getElementById('regime-confidence').textContent = 'confidence ' + ((data.confidence || 0) * 100).toFixed(0) + '%';
+  });
+
+  // WebSocket updates
+  PaisaSocket.on('portfolio', function(data) {
+    if (data.positions) PaisaTables.setData('positions-table', data.positions);
+  });
+
+  PaisaSocket.on('trade', function(data) {
+    fetch('/api/trades?limit=20').then(r => r.json()).then(d => PaisaTables.setData('orders-table', d));
+  });
+
+  PaisaSocket.on('regime_change', function(data) {
+    const badge = document.getElementById('regime-badge');
+    badge.textContent = data.to_regime || data.regime;
+    badge.className = 'badge badge-' + PaisaUtils.regimeColor(data.to_regime || data.regime);
+  });
+});
+</script>
+{% endblock %}
