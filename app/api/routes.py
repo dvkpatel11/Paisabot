@@ -1007,6 +1007,101 @@ def update_universe_etf(symbol: str):
     return jsonify(_serialize_etf(etf))
 
 
+@api_bp.route('/universe', methods=['POST'])
+@api_login_required
+def create_universe_etf():
+    """Add a new ETF to the watchlist.
+
+    Body (required): {"symbol": "XBI", "name": "SPDR S&P Biotech", "sector": "Healthcare"}
+    Body (optional): {"aum_bn": 8.5, "avg_daily_vol_m": 450, "spread_est_bps": 3.5,
+                      "liquidity_score": 4.2, "options_market": true, "mt5_symbol": "XBI.NYSE",
+                      "notes": "...", "your_rating": 3, "tags": "biotech,healthcare"}
+    """
+    from app.models.etf_universe import ETFUniverse
+
+    data = request.get_json(silent=True) or {}
+
+    symbol = (data.get('symbol') or '').strip().upper()
+    if not symbol:
+        return jsonify({'error': 'symbol is required'}), 400
+
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name is required'}), 400
+
+    sector = (data.get('sector') or '').strip()
+    if not sector:
+        return jsonify({'error': 'sector is required'}), 400
+
+    if ETFUniverse.query.filter_by(symbol=symbol).first():
+        return jsonify({'error': f'{symbol} already exists in universe'}), 409
+
+    etf = ETFUniverse(
+        symbol=symbol,
+        name=name,
+        sector=sector,
+        aum_bn=data.get('aum_bn'),
+        avg_daily_vol_m=data.get('avg_daily_vol_m'),
+        spread_est_bps=data.get('spread_est_bps'),
+        liquidity_score=data.get('liquidity_score'),
+        options_market=data.get('options_market', True),
+        mt5_symbol=data.get('mt5_symbol'),
+        notes=data.get('notes'),
+        your_rating=data.get('your_rating'),
+        tags=data.get('tags'),
+        is_active=True,
+        in_active_set=False,
+    )
+    db.session.add(etf)
+    db.session.commit()
+    return jsonify(_serialize_etf(etf)), 201
+
+
+@api_bp.route('/universe/<symbol>', methods=['DELETE'])
+@api_login_required
+def delete_universe_etf(symbol: str):
+    """Soft-delete an ETF from the watchlist (sets is_active=False).
+
+    Pass ?hard=1 to permanently remove the row (also clears price_bars and
+    factor_scores for that symbol).  Hard delete is only permitted in
+    research/simulation mode to prevent accidental data loss in live.
+    """
+    from app.models.etf_universe import ETFUniverse
+
+    etf = ETFUniverse.query.filter_by(symbol=symbol.upper()).first()
+    if not etf:
+        return jsonify({'error': f'{symbol} not found'}), 404
+
+    hard = request.args.get('hard', '0') == '1'
+    if hard:
+        # Guard: only allow hard delete outside live mode
+        mode = redis_client.hget('config:system', 'operational_mode') or b''
+        if isinstance(mode, bytes):
+            mode = mode.decode()
+        if mode == 'live':
+            return jsonify({'error': 'Hard delete is not permitted in live mode'}), 403
+
+        from app.models.price_bars import PriceBar
+        from app.models.factor_scores import FactorScore
+        PriceBar.query.filter_by(symbol=etf.symbol).delete()
+        FactorScore.query.filter_by(symbol=etf.symbol).delete()
+        db.session.delete(etf)
+        db.session.commit()
+
+        # Remove from Redis active-set cache
+        redis_client.srem('config:active_symbols', etf.symbol)
+        return jsonify({'deleted': etf.symbol, 'hard': True})
+
+    # Soft delete — deactivate from trading pipeline first
+    etf.in_active_set = False
+    etf.is_active = False
+    db.session.commit()
+
+    # Remove from Redis active-set cache
+    redis_client.srem('config:active_symbols', etf.symbol)
+    return jsonify({'deleted': etf.symbol, 'hard': False})
+
+
 # ── backtest ───────────────────────────────────────────────────────
 
 @api_bp.route('/backtest/run', methods=['POST'])

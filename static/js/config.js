@@ -142,10 +142,36 @@ const PaisaConfig = (function() {
       .then(function(etfs) {
         var activeCount = etfs.filter(function(e) { return e.in_active_set; }).length;
 
+        // ── Header bar with count + Add ETF button ──────────────────────────
         var html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
         html += '<span style="font-size:13px;color:var(--text-secondary)">' + etfs.length + ' ETFs tracked, <strong>' + activeCount + '</strong> in trading set</span>';
+        html += '<button class="btn btn-sm" onclick="PaisaConfig.showAddETF()" style="font-size:12px">+ Add ETF</button>';
         html += '</div>';
 
+        // ── Add ETF inline form (hidden by default) ─────────────────────────
+        html += '<div id="add-etf-form" style="display:none;background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:12px">';
+        html += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600">Add ETF to Watchlist</div>';
+        html += '<div style="display:grid;grid-template-columns:100px 1fr 1fr 80px 80px 80px;gap:8px;align-items:end">';
+        html += '<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">Symbol *</label>';
+        html += '<input id="add-symbol" class="input-field" placeholder="XBI" style="width:100%;text-transform:uppercase"></div>';
+        html += '<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">Name *</label>';
+        html += '<input id="add-name" class="input-field" placeholder="SPDR S&P Biotech ETF" style="width:100%"></div>';
+        html += '<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">Sector *</label>';
+        html += '<input id="add-sector" class="input-field" placeholder="Healthcare" style="width:100%"></div>';
+        html += '<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">AUM ($B)</label>';
+        html += '<input id="add-aum" type="number" step="0.1" class="input-field" placeholder="8.5" style="width:100%"></div>';
+        html += '<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">Spread (bps)</label>';
+        html += '<input id="add-spread" type="number" step="0.5" class="input-field" placeholder="3.5" style="width:100%"></div>';
+        html += '<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px">&nbsp;</label>';
+        html += '<div style="display:flex;gap:6px">';
+        html += '<button class="btn btn-primary btn-sm" onclick="PaisaConfig.submitAddETF()" style="white-space:nowrap">Add</button>';
+        html += '<button class="btn btn-sm" onclick="PaisaConfig.hideAddETF()">Cancel</button>';
+        html += '</div></div>';
+        html += '</div>';
+        html += '<div id="add-etf-error" style="color:var(--red);font-size:12px;margin-top:6px;display:none"></div>';
+        html += '</div>';
+
+        // ── ETF table ────────────────────────────────────────────────────────
         html += '<table style="width:100%;border-collapse:collapse;font-size:12px;font-family:var(--font-mono)">';
         html += '<thead><tr style="border-bottom:2px solid var(--border);font-size:11px;color:var(--text-muted)">';
         html += '<th style="padding:6px 8px;text-align:center;width:60px">Trading</th>';
@@ -158,6 +184,7 @@ const PaisaConfig = (function() {
         html += '<th style="padding:6px 8px;text-align:right">Score</th>';
         html += '<th style="padding:6px 8px;text-align:left">Reason</th>';
         html += '<th style="padding:6px 8px;text-align:left">Notes</th>';
+        html += '<th style="padding:6px 8px;text-align:center;width:60px">Remove</th>';
         html += '</tr></thead><tbody>';
 
         etfs.forEach(function(e) {
@@ -178,6 +205,11 @@ const PaisaConfig = (function() {
           html += '<td style="padding:6px 8px;text-align:right">' + (e.last_composite_score ? e.last_composite_score.toFixed(3) : '-') + '</td>';
           html += '<td style="padding:6px 8px;font-size:11px;color:var(--text-muted)">' + (e.active_set_reason || '') + '</td>';
           html += '<td style="padding:6px 8px;font-size:11px;color:var(--text-muted)">' + (e.notes || '') + '</td>';
+          html += '<td style="padding:6px 8px;text-align:center">';
+          html += '<button class="btn btn-sm" onclick="PaisaConfig.removeETF(\'' + e.symbol + '\')" ';
+          html += 'style="font-size:11px;padding:2px 8px;color:var(--red);border-color:var(--red);background:transparent" ';
+          html += 'title="Remove from watchlist">✕</button>';
+          html += '</td>';
           html += '</tr>';
         });
 
@@ -186,6 +218,83 @@ const PaisaConfig = (function() {
       })
       .catch(function() {
         el.innerHTML = '<div class="empty-state">Failed to load universe</div>';
+      });
+  }
+
+  function showAddETF() {
+    var form = document.getElementById('add-etf-form');
+    if (form) {
+      form.style.display = 'block';
+      var sym = document.getElementById('add-symbol');
+      if (sym) sym.focus();
+    }
+  }
+
+  function hideAddETF() {
+    var form = document.getElementById('add-etf-form');
+    if (form) form.style.display = 'none';
+    ['add-symbol', 'add-name', 'add-sector', 'add-aum', 'add-spread'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    var err = document.getElementById('add-etf-error');
+    if (err) err.style.display = 'none';
+  }
+
+  function submitAddETF() {
+    var symbol = (document.getElementById('add-symbol').value || '').trim().toUpperCase();
+    var name   = (document.getElementById('add-name').value   || '').trim();
+    var sector = (document.getElementById('add-sector').value || '').trim();
+    var aum    = document.getElementById('add-aum').value;
+    var spread = document.getElementById('add-spread').value;
+
+    var errEl = document.getElementById('add-etf-error');
+
+    if (!symbol || !name || !sector) {
+      errEl.textContent = 'Symbol, Name, and Sector are required.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    var body = { symbol: symbol, name: name, sector: sector };
+    if (aum)    body.aum_bn         = parseFloat(aum);
+    if (spread) body.spread_est_bps = parseFloat(spread);
+
+    fetch('/api/universe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(res) {
+      if (!res.ok) {
+        errEl.textContent = res.data.error || 'Failed to add ETF';
+        errEl.style.display = 'block';
+        return;
+      }
+      hideAddETF();
+      loadUniverse();
+    })
+    .catch(function() {
+      errEl.textContent = 'Network error — could not add ETF';
+      errEl.style.display = 'block';
+    });
+  }
+
+  function removeETF(symbol) {
+    if (!confirm('Remove ' + symbol + ' from the watchlist?\n\nThis will deactivate it from the trading pipeline and hide it from all views.')) return;
+
+    fetch('/api/universe/' + symbol, { method: 'DELETE' })
+      .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+      .then(function(res) {
+        if (!res.ok) {
+          alert('Error: ' + (res.data.error || 'Could not remove ETF'));
+          return;
+        }
+        loadUniverse();
+      })
+      .catch(function() {
+        alert('Network error — could not remove ETF');
       });
   }
 
@@ -226,5 +335,6 @@ const PaisaConfig = (function() {
     });
   }
 
-  return { loadCategory, save, loadAudit, loadUniverse, toggleActiveSet };
+  return { loadCategory, save, loadAudit, loadUniverse, toggleActiveSet,
+           showAddETF, hideAddETF, submitAddETF, removeETF };
 })();
