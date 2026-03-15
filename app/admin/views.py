@@ -154,6 +154,14 @@ class KillSwitchView(BaseView):
         return redirect(url_for('.index'))
 
 
+class ApiTestView(BaseView):
+    """Interactive API validation console."""
+
+    @expose('/')
+    def index(self):
+        return self.render('admin/api_test.html')
+
+
 class PerformanceView(ModelView):
     """Read-only view of daily performance metrics."""
 
@@ -192,5 +200,6 @@ def init_admin(app):
     admin.add_view(TradeView(Trade, db.session, name='Trades', category='Execution'))
     admin.add_view(PositionView(Position, db.session, name='Positions', category='Execution'))
     admin.add_view(PerformanceView(PerformanceMetric, db.session, name='Performance', category='Analytics'))
+    admin.add_view(ApiTestView(name='API Tests', endpoint='apitest', category='System'))
 
     return admin

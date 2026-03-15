@@ -1,4 +1,5 @@
 import logging
+import os
 
 import redis as redis_lib
 import structlog
@@ -6,9 +7,16 @@ from flask import Flask
 
 from config import config_map
 
+# Project root (one level above app/)
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 
 def create_app(config_name: str = 'development') -> Flask:
-    app = Flask(__name__)
+    app = Flask(
+        __name__,
+        static_folder=os.path.join(_ROOT, 'static'),
+        template_folder=os.path.join(_ROOT, 'templates'),
+    )
     app.config.from_object(config_map[config_name])
 
     # Init extensions

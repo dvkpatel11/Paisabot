@@ -41,7 +41,12 @@
       "Bash(DATABASE_URL=\"postgresql://paisabot:paisabot@127.0.0.1:5432/paisabot\" alembic revision --autogenerate -m \"Initial schema: 8 tables\")",
       "Bash(DATABASE_URL=\"postgresql://paisabot:paisabot@127.0.0.1:5432/paisabot\" alembic upgrade head)",
       "Bash(DATABASE_URL=\"postgresql://paisabot:paisabot@127.0.0.1:5432/paisabot\" python scripts/seed_config.py)",
-      "Bash(DATABASE_URL=\"postgresql://paisabot:paisabot@127.0.0.1:5432/paisabot\" python scripts/universe_setup.py)"
+      "Bash(DATABASE_URL=\"postgresql://paisabot:paisabot@127.0.0.1:5432/paisabot\" python scripts/universe_setup.py)",
+      "Bash(python -m pytest tests/test_execution/test_mt5_broker.py -v)",
+      "Bash(python -m pytest tests/test_execution/test_mt5_broker.py -v --timeout=30 --no-header)",
+      "Bash(python -m pytest tests/test_execution/test_mt5_broker.py -v --no-header)",
+      "Bash(python -m pytest --no-header -q)",
+      "Bash(python -m pytest --tb=short -q)"
     ]
   }
 }
