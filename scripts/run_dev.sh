@@ -126,6 +126,7 @@ fi
 
 # ── Trap: clean shutdown ─────────────────────────────────────────
 CELERY_PID=""
+BEAT_PID=""
 
 cleanup() {
     echo ""
@@ -134,6 +135,11 @@ cleanup() {
         kill "$CELERY_PID" 2>/dev/null
         wait "$CELERY_PID" 2>/dev/null || true
         info "Celery worker stopped"
+    fi
+    if [ -n "$BEAT_PID" ] && kill -0 "$BEAT_PID" 2>/dev/null; then
+        kill "$BEAT_PID" 2>/dev/null
+        wait "$BEAT_PID" 2>/dev/null || true
+        info "Celery beat stopped"
     fi
     info "Done. Docker services are still running — stop with: docker compose down"
 }
@@ -148,6 +154,14 @@ celery -A celery_worker worker \
     &
 CELERY_PID=$!
 info "Celery worker running (PID $CELERY_PID)"
+
+# ── Celery beat scheduler (background) ───────────────────────────
+info "Starting Celery beat scheduler..."
+celery -A celery_worker beat \
+    --loglevel=info \
+    &
+BEAT_PID=$!
+info "Celery beat running (PID $BEAT_PID)"
 
 # ── Flask dev server (foreground) ────────────────────────────────
 info "Starting Flask dev server on http://localhost:5000"

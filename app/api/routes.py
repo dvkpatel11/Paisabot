@@ -305,6 +305,84 @@ def get_trades():
     ])
 
 
+@api_bp.route('/trades/manual', methods=['POST'])
+def submit_manual_trade():
+    """Submit a manual trade entry.
+
+    Body: {
+        "symbol": "SPY",
+        "side": "buy",
+        "order_type": "market",
+        "notional": 5000,
+        "broker": "alpaca",
+        "limit_price": 450.50  (optional, for limit orders)
+    }
+    """
+    from app.models.trades import Trade
+    from app.models.etf_universe import ETFUniverse
+
+    data = request.get_json(silent=True) or {}
+
+    # Validate required fields
+    symbol = (data.get('symbol') or '').upper()
+    side = data.get('side', '').lower()
+    order_type = data.get('order_type', 'market').lower()
+    notional = data.get('notional')
+    broker = data.get('broker', 'alpaca').lower()
+
+    if not symbol:
+        return jsonify({'error': 'symbol is required'}), 400
+    if side not in ('buy', 'sell'):
+        return jsonify({'error': 'side must be buy or sell'}), 400
+    if not notional or float(notional) <= 0:
+        return jsonify({'error': 'notional must be positive'}), 400
+
+    # Verify symbol is in universe
+    etf = ETFUniverse.query.filter_by(symbol=symbol, is_active=True).first()
+    if not etf:
+        return jsonify({'error': f'{symbol} not found in active universe'}), 400
+
+    # Check kill switches
+    kill_rebalance = redis_client.get('kill_switch:rebalance')
+    if kill_rebalance and kill_rebalance != '0':
+        return jsonify({'error': 'Rebalance kill switch is active — trading disabled'}), 403
+
+    # Get operational mode
+    mode = redis_client.hget('config:system', 'operational_mode') or 'simulation'
+
+    trade = Trade(
+        symbol=symbol,
+        broker=broker,
+        side=side,
+        order_type=order_type,
+        requested_notional=float(notional),
+        status='pending',
+        operational_mode=mode,
+        trade_time=datetime.now(timezone.utc),
+    )
+    db.session.add(trade)
+    db.session.commit()
+
+    # Publish to channel for execution engine pickup
+    redis_client.publish('channel:trades', json.dumps({
+        'trade_id': trade.id,
+        'symbol': symbol,
+        'side': side,
+        'order_type': order_type,
+        'notional': float(notional),
+        'broker': broker,
+        'source': 'manual',
+    }))
+
+    return jsonify({
+        'trade_id': trade.id,
+        'symbol': symbol,
+        'side': side,
+        'status': 'pending',
+        'mode': mode,
+    }), 201
+
+
 # ── factors (per symbol) ──────────────────────────────────────────
 
 @api_bp.route('/factors/<symbol>', methods=['GET'])
@@ -643,6 +721,48 @@ def get_universe():
 
 # ── backtest ───────────────────────────────────────────────────────
 
+@api_bp.route('/backtest/run', methods=['POST'])
+def run_backtest():
+    """Run a backtest with given parameters.
+
+    Body: {
+        "weights": {"trend": 0.25, "volatility": 0.20, ...},
+        "start_date": "2023-01-01",
+        "end_date": "2025-12-31",
+        "initial_capital": 100000,
+        "rebalance_freq": "weekly",
+        "max_positions": 10,
+        "slippage_bps": 2.0
+    }
+    """
+    from datetime import date as date_cls
+    from app.backtesting import VectorizedBacktester
+
+    data = request.get_json(silent=True) or {}
+
+    weights = data.get('weights')
+    try:
+        start = date_cls.fromisoformat(data.get('start_date', ''))
+    except (ValueError, TypeError):
+        start = date_cls.today() - __import__('datetime').timedelta(days=756)
+    try:
+        end = date_cls.fromisoformat(data.get('end_date', ''))
+    except (ValueError, TypeError):
+        end = date_cls.today()
+
+    backtester = VectorizedBacktester(
+        db_session=db.session,
+        weights=weights,
+        initial_capital=data.get('initial_capital', 100_000),
+        rebalance_freq=data.get('rebalance_freq', 'weekly'),
+        max_positions=data.get('max_positions', 10),
+        slippage_bps=data.get('slippage_bps', 2.0),
+    )
+
+    result = backtester.run(start, end)
+    return jsonify(result.to_json())
+
+
 @api_bp.route('/backtest/results', methods=['GET'])
 def get_backtest_results():
     """Get performance metrics for tearsheet display."""
@@ -786,6 +906,90 @@ def get_pipeline_status():
         'kill_switches': kill_switches,
         'operational_mode': mode or 'simulation',
         'timestamp': now.isoformat(),
+    })
+
+
+# ── data management ───────────────────────────────────────────────
+
+@api_bp.route('/data/backfill', methods=['POST'])
+def trigger_backfill():
+    """Trigger historical bar backfill for ETFs.
+
+    Body (optional): {"symbols": ["SPY", "QQQ"], "days": 756}
+    Defaults to all active ETFs, 756 days.
+    """
+    data = request.get_json(silent=True) or {}
+    days = data.get('days', 756)
+
+    if 'symbols' in data and data['symbols']:
+        symbols = [s.upper() for s in data['symbols']]
+    else:
+        from app.models.etf_universe import ETFUniverse
+        etfs = ETFUniverse.query.filter_by(is_active=True).all()
+        symbols = [e.symbol for e in etfs]
+
+    from app.data.tasks import backfill_bars
+    task_ids = []
+    for symbol in symbols:
+        result = backfill_bars.delay(symbol, days)
+        task_ids.append({'symbol': symbol, 'task_id': result.id})
+
+    return jsonify({
+        'status': 'dispatched',
+        'count': len(symbols),
+        'days': days,
+        'tasks': task_ids,
+    })
+
+
+@api_bp.route('/data/compute', methods=['POST'])
+def trigger_compute():
+    """Trigger factor computation and signal generation."""
+    from app.data.tasks import compute_all_factors
+    result = compute_all_factors.delay()
+    return jsonify({'status': 'dispatched', 'task_id': result.id})
+
+
+@api_bp.route('/data/status', methods=['GET'])
+def get_data_status():
+    """Get data pipeline status: bar counts, freshness, factor status."""
+    from app.models.price_bars import PriceBar
+    from app.models.factor_scores import FactorScore
+    from app.models.etf_universe import ETFUniverse
+    from sqlalchemy import func
+
+    # Bar counts per symbol
+    bar_stats = db.session.query(
+        PriceBar.symbol,
+        func.count(PriceBar.id).label('count'),
+        func.max(PriceBar.timestamp).label('latest'),
+        func.min(PriceBar.timestamp).label('earliest'),
+    ).filter(
+        PriceBar.timeframe == '1d',
+    ).group_by(PriceBar.symbol).all()
+
+    bars = {
+        row.symbol: {
+            'count': row.count,
+            'latest': row.latest.isoformat() if row.latest else None,
+            'earliest': row.earliest.isoformat() if row.earliest else None,
+        }
+        for row in bar_stats
+    }
+
+    # Factor score freshness
+    factor_latest = db.session.query(
+        func.max(FactorScore.calc_time),
+    ).scalar()
+
+    # Universe symbols
+    universe = ETFUniverse.query.filter_by(is_active=True).count()
+
+    return jsonify({
+        'universe_count': universe,
+        'bars': bars,
+        'bars_total_symbols': len(bars),
+        'factor_scores_latest': factor_latest.isoformat() if factor_latest else None,
     })
 
 

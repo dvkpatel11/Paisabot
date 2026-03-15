@@ -30,6 +30,8 @@
       <a href="{{ url_for('views.factors') }}" class="nav-link {% if request.endpoint == 'views.factors' %}active{% endif %}">Factors</a>
       <a href="{{ url_for('views.rotation') }}" class="nav-link {% if request.endpoint == 'views.rotation' %}active{% endif %}">Rotation</a>
       <a href="{{ url_for('views.execution') }}" class="nav-link {% if request.endpoint == 'views.execution' %}active{% endif %}">Execution</a>
+      <a href="{{ url_for('views.backtest') }}" class="nav-link {% if request.endpoint == 'views.backtest' %}active{% endif %}">Backtest</a>
+      <a href="{{ url_for('views.bulletin') }}" class="nav-link {% if request.endpoint == 'views.bulletin' %}active{% endif %}">Bulletin</a>
       <a href="{{ url_for('views.analytics') }}" class="nav-link {% if request.endpoint == 'views.analytics' %}active{% endif %}">Analytics</a>
       <a href="{{ url_for('views.alerts') }}" class="nav-link {% if request.endpoint == 'views.alerts' %}active{% endif %}">
         Alerts

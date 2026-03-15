@@ -47,7 +47,11 @@
       "Bash(python -m pytest tests/test_execution/test_mt5_broker.py -v --no-header)",
       "Bash(python -m pytest --no-header -q)",
       "Bash(python -m pytest --tb=short -q)",
-      "Bash(chmod +x \"C:\\\\Users\\\\deepv\\\\Desktop\\\\Projects\\\\Paisabot\\\\.claude\\\\worktrees\\\\determined-borg\\\\scripts\\\\run_dev.sh\")"
+      "Bash(chmod +x \"C:\\\\Users\\\\deepv\\\\Desktop\\\\Projects\\\\Paisabot\\\\.claude\\\\worktrees\\\\determined-borg\\\\scripts\\\\run_dev.sh\")",
+      "Bash(find /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/determined-borg -name *.html -type f)",
+      "Bash(grep -n \"api/universe\\\\|/universe\" /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/determined-borg/templates/*.html)",
+      "Bash(xargs grep:*)",
+      "Bash(python -m pytest tests/ -x -q)"
     ]
   }
 }
