@@ -68,6 +68,20 @@ class AlpacaWebSocketListener:
         self._thread.start()
         self._log.info('ws_started', symbols=len(symbols))
 
+    def add_symbol(self, symbol: str) -> None:
+        """Dynamically add a symbol to the live subscription."""
+        if symbol in self._symbols:
+            return
+        self._symbols.append(symbol)
+        if self._stream:
+            try:
+                def on_bar(bar):
+                    self._handle_bar(bar)
+                self._stream.subscribe_bars(on_bar, symbol)
+                self._log.info('ws_symbol_added', symbol=symbol)
+            except Exception as exc:
+                self._log.error('ws_symbol_add_failed', symbol=symbol, error=str(exc))
+
     def stop(self) -> None:
         """Stop the WebSocket connection."""
         self._running = False
