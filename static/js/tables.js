@@ -12,7 +12,6 @@ const PaisaTables = (function() {
 
     const opts = Object.assign({
       layout: 'fitColumns',
-      height: 'auto',
       maxHeight: 400,
       placeholder: 'No data',
       columns: columns,
