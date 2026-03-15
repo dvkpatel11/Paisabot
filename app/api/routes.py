@@ -27,6 +27,24 @@ def health():
     except Exception:
         components['database'] = 'error'
 
+    # Check Alpaca
+    import os
+    alpaca_key = os.environ.get('ALPACA_API_KEY', '')
+    alpaca_account = None
+    if alpaca_key:
+        try:
+            from alpaca.trading.client import TradingClient
+            client = TradingClient(
+                alpaca_key,
+                os.environ.get('ALPACA_SECRET_KEY', ''),
+                paper=os.environ.get('ALPACA_PAPER', 'true').lower() == 'true',
+            )
+            account = client.get_account()
+            components['alpaca'] = 'ok'
+            alpaca_account = account.account_number
+        except Exception:
+            components['alpaca'] = 'error'
+
     # Check kill switches
     kill_switches = {}
     for switch in ('trading', 'rebalance', 'all', 'force_liquidate'):
@@ -35,12 +53,16 @@ def health():
 
     overall = 'ok' if all(v == 'ok' for v in components.values()) else 'degraded'
 
-    return jsonify({
+    result = {
         'status': overall,
         'components': components,
         'kill_switches': kill_switches,
         'timestamp': datetime.now(timezone.utc).isoformat(),
-    })
+    }
+    if alpaca_account:
+        result['alpaca_account'] = alpaca_account
+
+    return jsonify(result)
 
 
 # ── scores ─────────────────────────────────────────────────────────
@@ -915,11 +937,18 @@ def get_pipeline_status():
 def trigger_backfill():
     """Trigger historical bar backfill for ETFs.
 
-    Body (optional): {"symbols": ["SPY", "QQQ"], "days": 756}
-    Defaults to all active ETFs, 756 days.
+    Body (optional): {
+        "symbols": ["SPY", "QQQ"],
+        "days": 756,
+        "sync": false  — set true to run synchronously (no Celery needed)
+    }
+    Defaults to all active ETFs, 756 days, async (Celery).
     """
+    import os
+    from datetime import timedelta
     data = request.get_json(silent=True) or {}
     days = data.get('days', 756)
+    sync = data.get('sync', False)
 
     if 'symbols' in data and data['symbols']:
         symbols = [s.upper() for s in data['symbols']]
@@ -928,6 +957,45 @@ def trigger_backfill():
         etfs = ETFUniverse.query.filter_by(is_active=True).all()
         symbols = [e.symbol for e in etfs]
 
+    if sync:
+        # Run synchronously — useful when Celery is not running
+        from app.data.alpaca_provider import AlpacaDataProvider
+        from app.data.ingestion import ingest_daily_bars, update_redis_cache
+        from datetime import date as date_cls
+
+        api_key = os.environ.get('ALPACA_API_KEY', '')
+        secret_key = os.environ.get('ALPACA_SECRET_KEY', '')
+        if not api_key:
+            return jsonify({'error': 'ALPACA_API_KEY not set in .env'}), 400
+
+        provider = AlpacaDataProvider(api_key=api_key, secret_key=secret_key)
+        end_date = date_cls.today() - timedelta(days=1)
+        start_date = end_date - timedelta(days=days)
+
+        results = []
+        errors = []
+        for symbol in symbols:
+            try:
+                df = provider.get_daily_bars(symbol, start_date, end_date)
+                if df.empty:
+                    results.append({'symbol': symbol, 'inserted': 0, 'status': 'no_data'})
+                    continue
+                inserted = ingest_daily_bars(symbol, df, source='alpaca')
+                update_redis_cache(symbol, df, redis_client)
+                results.append({'symbol': symbol, 'inserted': inserted, 'status': 'ok'})
+            except Exception as exc:
+                errors.append({'symbol': symbol, 'error': str(exc)})
+
+        return jsonify({
+            'status': 'completed',
+            'mode': 'sync',
+            'count': len(symbols),
+            'days': days,
+            'results': results,
+            'errors': errors,
+        })
+
+    # Async via Celery
     from app.data.tasks import backfill_bars
     task_ids = []
     for symbol in symbols:
@@ -936,6 +1004,7 @@ def trigger_backfill():
 
     return jsonify({
         'status': 'dispatched',
+        'mode': 'async',
         'count': len(symbols),
         'days': days,
         'tasks': task_ids,

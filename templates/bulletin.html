@@ -85,53 +85,65 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function checkSources() {
-  // Alpaca
+  // Health endpoint: returns {status, components: {redis: 'ok'|'error', database: 'ok'|'error'}, ...}
   fetch('/api/health').then(r => r.json()).then(data => {
-    const alpaca = data.alpaca || {};
-    const el = document.getElementById('src-alpaca-status');
-    if (alpaca.connected) {
-      el.textContent = 'OK';
-      el.style.color = 'var(--green)';
-      document.getElementById('src-alpaca-detail').textContent = alpaca.account || '';
-    } else {
-      el.textContent = 'N/A';
-      el.style.color = 'var(--text-muted)';
-      document.getElementById('src-alpaca-detail').textContent = 'No API key configured';
-    }
+    const comps = data.components || {};
 
     // Redis
-    const redis = data.redis || {};
+    const rOk = comps.redis === 'ok';
     const rEl = document.getElementById('src-redis-status');
-    rEl.textContent = redis.connected ? 'OK' : 'DOWN';
-    rEl.style.color = redis.connected ? 'var(--green)' : 'var(--red)';
+    rEl.textContent = rOk ? 'OK' : 'DOWN';
+    rEl.style.color = rOk ? 'var(--green)' : 'var(--red)';
+    document.getElementById('src-redis-detail').textContent = rOk ? 'Connected' : 'Connection failed';
 
     // DB
-    const db = data.database || {};
+    const dOk = comps.database === 'ok';
     const dEl = document.getElementById('src-db-status');
-    dEl.textContent = db.connected ? 'OK' : 'DOWN';
-    dEl.style.color = db.connected ? 'var(--green)' : 'var(--red)';
-    document.getElementById('src-db-detail').textContent = db.bar_count ? db.bar_count + ' bars' : '';
+    dEl.textContent = dOk ? 'OK' : 'DOWN';
+    dEl.style.color = dOk ? 'var(--green)' : 'var(--red)';
+
+    // Alpaca — check via separate API call
+    const aEl = document.getElementById('src-alpaca-status');
+    if (comps.alpaca === 'ok') {
+      aEl.textContent = 'OK';
+      aEl.style.color = 'var(--green)';
+      document.getElementById('src-alpaca-detail').textContent = data.alpaca_account || 'Connected';
+    } else if (comps.alpaca === 'error') {
+      aEl.textContent = 'ERR';
+      aEl.style.color = 'var(--red)';
+      document.getElementById('src-alpaca-detail').textContent = 'Key configured but connection failed';
+    } else {
+      aEl.textContent = 'N/A';
+      aEl.style.color = 'var(--text-muted)';
+      document.getElementById('src-alpaca-detail').textContent = 'No API key configured';
+    }
   }).catch(() => {
     ['src-alpaca-status', 'src-redis-status', 'src-db-status'].forEach(id => {
       document.getElementById(id).textContent = '?';
     });
   });
 
-  // VIX — just check data status
+  // VIX + DB detail — from data status
   fetch('/api/data/status').then(r => r.json()).then(data => {
+    // DB bar count
+    document.getElementById('src-db-detail').textContent =
+      data.bars_total_symbols + ' symbols, ' +
+      Object.values(data.bars || {}).reduce((s, b) => s + b.count, 0) + ' total bars';
+
+    // VIX
     const vEl = document.getElementById('src-vix-status');
     const bars = data.bars || {};
-    if (bars['VIX'] || bars['^VIX']) {
+    const vix = bars['VIX'] || bars['^VIX'] || bars['VIXY'];
+    if (vix) {
       vEl.textContent = 'OK';
       vEl.style.color = 'var(--green)';
-      const vix = bars['VIX'] || bars['^VIX'];
       document.getElementById('src-vix-detail').textContent = vix.count + ' bars, latest ' + (vix.latest || '').slice(0, 10);
     } else {
       vEl.textContent = 'N/A';
       vEl.style.color = 'var(--text-muted)';
-      document.getElementById('src-vix-detail').textContent = 'No VIX data loaded';
+      document.getElementById('src-vix-detail').textContent = 'No VIX data — run Backfill from Pipelines';
     }
-  });
+  }).catch(() => {});
 }
 
 function loadPrices() {
