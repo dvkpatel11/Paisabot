@@ -26,8 +26,8 @@ yfinance>=0.2,<1.0
 pandas>=2.2,<3.0
 numpy>=2.2.6,<3.0
 pandas-ta>=0.4.67b0,<0.5
-arch>=6.3,<7.0
-scipy>=1.13,<2.0
+arch>=6.3,<9.0
+scipy>=1.13
 statsmodels>=0.14,<1.0
 
 # NLP / sentiment
