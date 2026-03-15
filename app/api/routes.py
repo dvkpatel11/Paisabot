@@ -15,17 +15,32 @@ from app.extensions import db, redis_client
 def health():
     """System health check with component status."""
     components = {}
+    details = {}
+
+    # Redis
     try:
         redis_client.ping()
         components['redis'] = 'ok'
-    except Exception:
+        try:
+            info = redis_client.info('memory')
+            used = info.get('used_memory_human', info.get(b'used_memory_human', '?'))
+            if isinstance(used, bytes):
+                used = used.decode()
+            details['redis'] = f'Connected, {used} used'
+        except Exception:
+            details['redis'] = 'Connected'
+    except Exception as exc:
         components['redis'] = 'error'
+        details['redis'] = str(exc)
 
+    # Database
     try:
         db.session.execute(db.text('SELECT 1'))
         components['database'] = 'ok'
-    except Exception:
+        details['database'] = 'Connected'
+    except Exception as exc:
         components['database'] = 'error'
+        details['database'] = str(exc)
 
     # Check Alpaca
     import os
@@ -42,20 +57,27 @@ def health():
             account = client.get_account()
             components['alpaca'] = 'ok'
             alpaca_account = account.account_number
-        except Exception:
+        except Exception as exc:
             components['alpaca'] = 'error'
+            details['alpaca'] = str(exc)
+    else:
+        details['alpaca'] = 'ALPACA_API_KEY not set in environment'
 
     # Check kill switches
     kill_switches = {}
-    for switch in ('trading', 'rebalance', 'all', 'force_liquidate'):
-        val = redis_client.get(f'kill_switch:{switch}')
-        kill_switches[switch] = val == b'1'
+    try:
+        for switch in ('trading', 'rebalance', 'all', 'force_liquidate'):
+            val = redis_client.get(f'kill_switch:{switch}')
+            kill_switches[switch] = val in (b'1', '1')
+    except Exception:
+        pass
 
     overall = 'ok' if all(v == 'ok' for v in components.values()) else 'degraded'
 
     result = {
         'status': overall,
         'components': components,
+        'details': details,
         'kill_switches': kill_switches,
         'timestamp': datetime.now(timezone.utc).isoformat(),
     }
@@ -1013,7 +1035,84 @@ def trigger_backfill():
 
 @api_bp.route('/data/compute', methods=['POST'])
 def trigger_compute():
-    """Trigger factor computation and signal generation."""
+    """Trigger factor computation and signal generation.
+
+    Body (optional): {"sync": true} to run synchronously (no Celery needed).
+    """
+    data = request.get_json(silent=True) or {}
+    sync = data.get('sync', False)
+
+    if sync:
+        from app.factors.factor_registry import FactorRegistry
+        from app.signals.signal_generator import SignalGenerator
+        from app.models.etf_universe import ETFUniverse
+
+        etfs = ETFUniverse.query.filter_by(is_active=True).all()
+        symbols = [e.symbol for e in etfs]
+
+        if not symbols:
+            return jsonify({'error': 'No active ETFs in universe'}), 400
+
+        # Compute factors (persists to DB + Redis)
+        registry = FactorRegistry(
+            redis_client=redis_client,
+            db_session=db.session,
+        )
+        scores = registry.compute_all(symbols)
+
+        # Cache scores
+        redis_client.set(
+            'cache:scores:latest',
+            json.dumps({
+                sym: {k: round(v, 4) for k, v in factors.items()}
+                for sym, factors in scores.items()
+            }),
+            ex=3600,
+        )
+
+        # Generate signals (persists to DB + Redis)
+        generator = SignalGenerator(
+            redis_client=redis_client,
+            db_session=db.session,
+        )
+        signals = generator.run(symbols)
+
+        # Cache regime
+        if signals:
+            first_sig = next(iter(signals.values()), {})
+            redis_client.set(
+                'cache:regime:current',
+                json.dumps({
+                    'regime': first_sig.get('regime', 'unknown'),
+                    'confidence': first_sig.get('regime_confidence', 0),
+                }),
+                ex=3600,
+            )
+
+        # Cache signals grouped
+        groups = {'long': [], 'neutral': [], 'avoid': []}
+        for sym, sig in signals.items():
+            entry = {
+                'symbol': sym,
+                'composite_score': sig.get('composite_score', 0),
+                'signal_type': sig.get('signal_type', 'neutral'),
+                'regime': sig.get('regime', 'unknown'),
+                'regime_confidence': sig.get('regime_confidence', 0),
+            }
+            bucket = groups.get(sig.get('signal_type', 'neutral'), groups['neutral'])
+            bucket.append(entry)
+        for bucket in groups.values():
+            bucket.sort(key=lambda x: x['composite_score'], reverse=True)
+        redis_client.set('cache:signals:latest', json.dumps(groups), ex=3600)
+
+        return jsonify({
+            'status': 'completed',
+            'mode': 'sync',
+            'symbols': len(symbols),
+            'signals': len(signals),
+        })
+
+    # Async via Celery
     from app.data.tasks import compute_all_factors
     result = compute_all_factors.delay()
     return jsonify({'status': 'dispatched', 'task_id': result.id})
@@ -1060,6 +1159,109 @@ def get_data_status():
         'bars_total_symbols': len(bars),
         'factor_scores_latest': factor_latest.isoformat() if factor_latest else None,
     })
+
+
+# ── pipeline ──────────────────────────────────────────────────────
+
+@api_bp.route('/pipeline/run', methods=['POST'])
+def run_pipeline():
+    """Run the full trading pipeline: signals → portfolio → risk → execution.
+
+    Body (optional): {"sync": true} to run synchronously (no Celery needed).
+    """
+    data = request.get_json(silent=True) or {}
+    sync = data.get('sync', False)
+
+    if sync:
+        from app.pipeline.orchestrator import PipelineOrchestrator
+        from app.utils.config_loader import ConfigLoader
+
+        config = ConfigLoader(redis_client, db.session)
+        orchestrator = PipelineOrchestrator(
+            redis_client=redis_client,
+            db_session=db.session,
+            config_loader=config,
+        )
+        result = orchestrator.run()
+        return jsonify(result)
+
+    from app.pipeline.tasks import run_trading_pipeline
+    result = run_trading_pipeline.delay()
+    return jsonify({'status': 'dispatched', 'task_id': result.id})
+
+
+@api_bp.route('/pipeline/status', methods=['GET'])
+def pipeline_status():
+    """Get latest pipeline run result from cache."""
+    raw = redis_client.get('cache:pipeline:latest')
+    if raw:
+        return jsonify(json.loads(raw))
+    return jsonify({'status': 'no_runs'})
+
+
+# ── websocket control ─────────────────────────────────────────────
+
+# Global reference to the WebSocket listener instance
+_ws_listener = None
+
+
+@api_bp.route('/data/websocket/start', methods=['POST'])
+def start_websocket():
+    """Start Alpaca WebSocket streaming for real-time bar data."""
+    global _ws_listener
+
+    if _ws_listener and _ws_listener.is_running:
+        return jsonify({'status': 'already_running'})
+
+    import os
+    from app.data.websocket_listener import AlpacaWebSocketListener
+    from app.models.etf_universe import ETFUniverse
+
+    api_key = os.environ.get('ALPACA_API_KEY', '')
+    secret_key = os.environ.get('ALPACA_SECRET_KEY', '')
+
+    if not api_key or not secret_key:
+        return jsonify({'error': 'Alpaca API keys not configured'}), 400
+
+    etfs = ETFUniverse.query.filter_by(is_active=True).all()
+    symbols = [e.symbol for e in etfs]
+
+    _ws_listener = AlpacaWebSocketListener(api_key, secret_key, redis_client)
+    _ws_listener.start(symbols)
+
+    return jsonify({'status': 'started', 'symbols': len(symbols)})
+
+
+@api_bp.route('/data/websocket/stop', methods=['POST'])
+def stop_websocket():
+    """Stop Alpaca WebSocket streaming."""
+    global _ws_listener
+
+    if _ws_listener:
+        _ws_listener.stop()
+        _ws_listener = None
+        return jsonify({'status': 'stopped'})
+
+    return jsonify({'status': 'not_running'})
+
+
+@api_bp.route('/data/websocket/status', methods=['GET'])
+def websocket_status():
+    """Get WebSocket listener status."""
+    global _ws_listener
+    running = _ws_listener.is_running if _ws_listener else False
+    return jsonify({'running': running})
+
+
+# ── performance recording ─────────────────────────────────────────
+
+@api_bp.route('/data/record-performance', methods=['POST'])
+def record_performance():
+    """Record daily performance metrics (sync)."""
+    from app.risk.performance_recorder import PerformanceRecorder
+    recorder = PerformanceRecorder(db.session, redis_client)
+    result = recorder.record_daily()
+    return jsonify(result)
 
 
 # ── helpers ────────────────────────────────────────────────────────

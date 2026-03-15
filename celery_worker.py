@@ -31,6 +31,10 @@ def make_celery(app=None):
                 'task': 'app.data.refresh_all_bars',
                 'schedule': crontab(hour=17, minute=0),
             },
+            'refresh-universe-metadata-daily': {
+                'task': 'app.data.refresh_universe_metadata',
+                'schedule': crontab(hour=17, minute=15),
+            },
             'refresh-vix-daily': {
                 'task': 'app.data.refresh_vix',
                 'schedule': crontab(hour=17, minute=30),
@@ -39,9 +43,28 @@ def make_celery(app=None):
                 'task': 'app.data.compute_all_factors',
                 'schedule': crontab(hour=18, minute=0),
             },
+            'run-trading-pipeline-daily': {
+                'task': 'app.pipeline.run_trading_pipeline',
+                'schedule': crontab(hour=18, minute=15),
+            },
+            'record-performance-daily': {
+                'task': 'app.data.record_daily_performance',
+                'schedule': crontab(hour=18, minute=30),
+            },
+            'continuous-risk-monitor': {
+                'task': 'app.risk.run_continuous_monitor',
+                'schedule': crontab(minute='*/5'),
+            },
         },
     })
     return celery
 
 
 celery = make_celery()
+
+# Import task modules AFTER celery instance is created so @celery.task
+# decorators register with this app. tasks.py does `from celery_worker
+# import celery` — so celery must exist before this import runs.
+import app.data.tasks  # noqa: E402, F401
+import app.pipeline.tasks  # noqa: E402, F401
+import app.risk.tasks  # noqa: E402, F401

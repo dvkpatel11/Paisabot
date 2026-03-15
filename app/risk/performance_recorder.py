@@ -1,0 +1,213 @@
+"""Daily performance metrics recorder.
+
+Computes portfolio value, daily returns, drawdown, rolling Sharpe/vol,
+and VaR from open positions, then persists to the performance_metrics table.
+"""
+from __future__ import annotations
+
+import json
+import math
+from datetime import date, datetime, timezone
+from decimal import Decimal
+
+import structlog
+
+logger = structlog.get_logger()
+
+DEFAULT_INITIAL_CAPITAL = 100_000.0
+
+
+class PerformanceRecorder:
+    """Records daily portfolio performance metrics."""
+
+    def __init__(self, db_session, redis_client=None):
+        self._db = db_session
+        self._redis = redis_client
+        self._log = logger.bind(component='performance_recorder')
+
+    def record_daily(self, target_date: date | None = None) -> dict:
+        """Compute and persist daily performance metrics.
+
+        Args:
+            target_date: date to record for (defaults to today).
+
+        Returns:
+            dict of computed metrics.
+        """
+        from app.models.performance import PerformanceMetric
+        from app.models.positions import Position
+
+        if target_date is None:
+            target_date = date.today()
+
+        # 1. Compute portfolio value from open positions + initial capital
+        positions = Position.query.filter_by(status='open').all()
+        total_notional = sum(float(p.notional or 0) for p in positions)
+        total_unrealized = sum(float(p.unrealized_pnl or 0) for p in positions)
+        total_realized = sum(float(p.realized_pnl or 0) for p in positions)
+
+        # Also sum realized PnL from closed positions
+        closed = Position.query.filter_by(status='closed').all()
+        total_realized += sum(float(p.realized_pnl or 0) for p in closed)
+
+        initial_capital = self._get_initial_capital()
+        portfolio_value = initial_capital + total_unrealized + total_realized
+
+        num_positions = len(positions)
+        cash = portfolio_value - total_notional
+        cash_pct = cash / portfolio_value if portfolio_value > 0 else 1.0
+
+        # 2. Get previous day's metric for daily return calc
+        prev = (
+            PerformanceMetric.query
+            .filter(PerformanceMetric.date < target_date)
+            .order_by(PerformanceMetric.date.desc())
+            .first()
+        )
+
+        prev_value = float(prev.portfolio_value) if prev else initial_capital
+        daily_return = (
+            (portfolio_value - prev_value) / prev_value
+            if prev_value > 0 else 0.0
+        )
+
+        # 3. Cumulative return from initial capital
+        cumulative_return = (
+            (portfolio_value - initial_capital) / initial_capital
+            if initial_capital > 0 else 0.0
+        )
+
+        # 4. Drawdown from peak
+        all_metrics = (
+            PerformanceMetric.query
+            .order_by(PerformanceMetric.date.asc())
+            .all()
+        )
+        peak = initial_capital
+        for m in all_metrics:
+            val = float(m.portfolio_value or 0)
+            if val > peak:
+                peak = val
+        if portfolio_value > peak:
+            peak = portfolio_value
+        drawdown = (portfolio_value - peak) / peak if peak > 0 else 0.0
+
+        # 5. Rolling 30-day Sharpe and volatility
+        recent = (
+            PerformanceMetric.query
+            .order_by(PerformanceMetric.date.desc())
+            .limit(30)
+            .all()
+        )
+        recent_returns = [
+            float(m.daily_return) for m in recent
+            if m.daily_return is not None
+        ]
+        # Include today's return
+        recent_returns.insert(0, daily_return)
+        recent_returns = recent_returns[:30]
+
+        sharpe_30d = self._compute_sharpe(recent_returns)
+        volatility_30d = self._compute_vol(recent_returns)
+        var_95 = self._compute_var(recent_returns, portfolio_value)
+
+        # 6. Get regime from Redis
+        regime = 'unknown'
+        if self._redis:
+            raw = self._redis.get('cache:regime:current')
+            if raw:
+                try:
+                    regime_data = json.loads(raw)
+                    regime = regime_data.get('regime', 'unknown')
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        # 7. Upsert metric
+        existing = PerformanceMetric.query.filter_by(date=target_date).first()
+        if existing:
+            existing.portfolio_value = Decimal(str(round(portfolio_value, 2)))
+            existing.daily_return = Decimal(str(round(daily_return, 6)))
+            existing.cumulative_return = Decimal(str(round(cumulative_return, 6)))
+            existing.drawdown = Decimal(str(round(drawdown, 6)))
+            existing.sharpe_30d = Decimal(str(round(sharpe_30d, 4))) if sharpe_30d else None
+            existing.volatility_30d = Decimal(str(round(volatility_30d, 4))) if volatility_30d else None
+            existing.var_95 = Decimal(str(round(var_95, 6))) if var_95 else None
+            existing.regime = regime
+            existing.num_positions = num_positions
+            existing.cash_pct = Decimal(str(round(cash_pct, 4)))
+        else:
+            metric = PerformanceMetric(
+                date=target_date,
+                portfolio_value=Decimal(str(round(portfolio_value, 2))),
+                daily_return=Decimal(str(round(daily_return, 6))),
+                cumulative_return=Decimal(str(round(cumulative_return, 6))),
+                drawdown=Decimal(str(round(drawdown, 6))),
+                sharpe_30d=Decimal(str(round(sharpe_30d, 4))) if sharpe_30d else None,
+                volatility_30d=Decimal(str(round(volatility_30d, 4))) if volatility_30d else None,
+                var_95=Decimal(str(round(var_95, 6))) if var_95 else None,
+                regime=regime,
+                num_positions=num_positions,
+                cash_pct=Decimal(str(round(cash_pct, 4))),
+            )
+            self._db.add(metric)
+
+        self._db.commit()
+
+        return {
+            'date': str(target_date),
+            'portfolio_value': round(portfolio_value, 2),
+            'daily_return': round(daily_return, 6),
+            'cumulative_return': round(cumulative_return, 6),
+            'drawdown': round(drawdown, 6),
+            'sharpe_30d': round(sharpe_30d, 4) if sharpe_30d else None,
+            'volatility_30d': round(volatility_30d, 4) if volatility_30d else None,
+            'num_positions': num_positions,
+        }
+
+    def _get_initial_capital(self) -> float:
+        """Read initial capital from config or use default."""
+        if self._redis:
+            raw = self._redis.hget('config:portfolio', 'initial_capital')
+            if raw:
+                try:
+                    return float(raw)
+                except (ValueError, TypeError):
+                    pass
+        return DEFAULT_INITIAL_CAPITAL
+
+    @staticmethod
+    def _compute_sharpe(returns: list[float], window: int = 30) -> float | None:
+        """Annualized Sharpe ratio from daily returns."""
+        if len(returns) < 5:
+            return None
+        vals = returns[:window]
+        mean_ret = sum(vals) / len(vals)
+        variance = sum((r - mean_ret) ** 2 for r in vals) / len(vals)
+        std_ret = math.sqrt(variance)
+        if std_ret < 1e-10:
+            return None
+        return (mean_ret / std_ret) * math.sqrt(252)
+
+    @staticmethod
+    def _compute_vol(returns: list[float], window: int = 30) -> float | None:
+        """Annualized volatility from daily returns."""
+        if len(returns) < 5:
+            return None
+        vals = returns[:window]
+        mean_ret = sum(vals) / len(vals)
+        variance = sum((r - mean_ret) ** 2 for r in vals) / len(vals)
+        return math.sqrt(variance) * math.sqrt(252)
+
+    @staticmethod
+    def _compute_var(
+        returns: list[float],
+        portfolio_value: float,
+    ) -> float | None:
+        """Parametric VaR at 95% confidence level."""
+        if len(returns) < 5:
+            return None
+        mean_ret = sum(returns) / len(returns)
+        variance = sum((r - mean_ret) ** 2 for r in returns) / len(returns)
+        std_ret = math.sqrt(variance)
+        # 95% VaR: negative value representing loss
+        return -1.645 * std_ret * portfolio_value

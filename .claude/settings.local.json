@@ -51,7 +51,19 @@
       "Bash(find /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/determined-borg -name *.html -type f)",
       "Bash(grep -n \"api/universe\\\\|/universe\" /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/determined-borg/templates/*.html)",
       "Bash(xargs grep:*)",
-      "Bash(python -m pytest tests/ -x -q)"
+      "Bash(python -m pytest tests/ -x -q)",
+      "Bash(python -c \"from celery_worker import celery; print\\(''Celery instance:'', celery\\); print\\(''Registered tasks:'', [t for t in celery.tasks if t.startswith\\(''app.''\\)]\\)\")",
+      "Bash(source venv/bin/activate)",
+      "Bash(python3 -c \"from celery_worker import celery; print\\(''OK''\\); print\\([t for t in celery.tasks if t.startswith\\(''app.''\\)]\\)\")",
+      "Bash(venv/Scripts/python.exe -c \"from celery_worker import celery; print\\(''OK''\\); print\\([t for t in celery.tasks if t.startswith\\(''app.''\\)]\\)\")",
+      "Bash(venv/Scripts/python.exe -c \"import sys; sys.path.insert\\(0, r''.claude/worktrees/determined-borg''\\); from celery_worker import celery; print\\(''Registered tasks:'', [t for t in celery.tasks if t.startswith\\(''app.''\\)]\\)\")",
+      "Bash(python3 -c \"import celery; print\\(celery.__version__\\)\")",
+      "Bash(python -m pytest tests/ -x -q -k \"test_health\")",
+      "Bash(python -m pytest tests/ -x --tb=short)",
+      "Bash(xargs ls:*)",
+      "Bash(python3 -c \"from alpaca.data.live import StockDataStream; print\\(StockDataStream.__doc__[:200]\\)\")",
+      "Bash(python3 -c \"import alpaca; print\\(alpaca.__version__\\)\")",
+      "Bash(python3:*)"
     ]
   }
 }

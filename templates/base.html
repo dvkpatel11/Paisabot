@@ -27,18 +27,17 @@
     </div>
     <div class="nav-links">
       <a href="{{ url_for('views.dashboard') }}" class="nav-link {% if request.endpoint == 'views.dashboard' %}active{% endif %}">Dashboard</a>
+      <a href="{{ url_for('views.bulletin') }}" class="nav-link {% if request.endpoint == 'views.bulletin' %}active{% endif %}">Bulletin</a>
+      <a href="{{ url_for('views.execution') }}" class="nav-link {% if request.endpoint == 'views.execution' %}active{% endif %}">Execution</a>
       <a href="{{ url_for('views.factors') }}" class="nav-link {% if request.endpoint == 'views.factors' %}active{% endif %}">Factors</a>
       <a href="{{ url_for('views.rotation') }}" class="nav-link {% if request.endpoint == 'views.rotation' %}active{% endif %}">Rotation</a>
-      <a href="{{ url_for('views.execution') }}" class="nav-link {% if request.endpoint == 'views.execution' %}active{% endif %}">Execution</a>
-      <a href="{{ url_for('views.backtest') }}" class="nav-link {% if request.endpoint == 'views.backtest' %}active{% endif %}">Backtest</a>
-      <a href="{{ url_for('views.bulletin') }}" class="nav-link {% if request.endpoint == 'views.bulletin' %}active{% endif %}">Bulletin</a>
-      <a href="{{ url_for('views.analytics') }}" class="nav-link {% if request.endpoint == 'views.analytics' %}active{% endif %}">Analytics</a>
+      <a href="{{ url_for('views.portfolio') }}" class="nav-link {% if request.endpoint == 'views.portfolio' %}active{% endif %}">Portfolio</a>
+      <a href="{{ url_for('views.pipelines') }}" class="nav-link {% if request.endpoint == 'views.pipelines' %}active{% endif %}">Pipelines</a>
+      <a href="{{ url_for('views.config') }}" class="nav-link {% if request.endpoint == 'views.config' %}active{% endif %}">Config</a>
       <a href="{{ url_for('views.alerts') }}" class="nav-link {% if request.endpoint == 'views.alerts' %}active{% endif %}">
         Alerts
         <span class="badge badge-danger" id="alert-count" style="display:none">0</span>
       </a>
-      <a href="{{ url_for('views.pipelines') }}" class="nav-link {% if request.endpoint == 'views.pipelines' %}active{% endif %}">Pipelines</a>
-      <a href="{{ url_for('views.config') }}" class="nav-link {% if request.endpoint == 'views.config' %}active{% endif %}">Config</a>
     </div>
     <div class="nav-status">
       <span class="status-dot" id="ws-status" title="WebSocket"></span>
