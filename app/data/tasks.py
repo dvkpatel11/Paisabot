@@ -190,13 +190,15 @@ def compute_all_factors(self):
 
 @celery.task(name='app.data.refresh_universe_metadata')
 def refresh_universe_metadata():
-    """Refresh universe metadata (AUM, ADV) from market data."""
+    """Refresh universe metadata (spreads, ADV) and cache to Redis."""
     from app import create_app
     app = create_app()
     with app.app_context():
         from app.models.etf_universe import ETFUniverse
+        from app.models.price_bars import PriceBar
         from app.data.alpaca_provider import AlpacaDataProvider
-        from app.extensions import db as _db
+        from app.extensions import db as _db, redis_client
+        from sqlalchemy import func, desc
         import os
 
         try:
@@ -206,22 +208,76 @@ def refresh_universe_metadata():
             )
 
             etfs = ETFUniverse.query.filter_by(is_active=True).all()
-            updated = 0
+            updated_spread = 0
+            updated_adv = 0
 
             for etf in etfs:
+                # Update spread from live quotes
                 quote = provider.get_latest_quote(etf.symbol)
                 if quote and quote.get('mid', 0) > 0:
                     spread_bps = quote.get('spread_bps', 0)
                     if spread_bps > 0:
                         etf.spread_est_bps = round(spread_bps, 2)
-                        updated += 1
+                        updated_spread += 1
+                        # Cache spread to Redis
+                        redis_client.set(
+                            f'etf:{etf.symbol}:spread_bps',
+                            str(round(spread_bps, 2)),
+                            ex=86400,
+                        )
+
+                # Compute 30-day ADV from price_bars
+                bars = (
+                    PriceBar.query
+                    .filter_by(symbol=etf.symbol, timeframe='1d')
+                    .order_by(desc(PriceBar.timestamp))
+                    .limit(30)
+                    .all()
+                )
+                if bars:
+                    total_dollar_vol = sum(
+                        float(b.close) * int(b.volume) for b in bars
+                    )
+                    adv_m = round(total_dollar_vol / len(bars) / 1_000_000, 2)
+                    redis_client.set(
+                        f'etf:{etf.symbol}:adv_30d_m',
+                        str(adv_m),
+                        ex=86400,
+                    )
+                    updated_adv += 1
 
             _db.session.commit()
-            logger.info('universe_metadata_refreshed', updated=updated)
-            return {'updated': updated}
+            logger.info(
+                'universe_metadata_refreshed',
+                updated_spread=updated_spread,
+                updated_adv=updated_adv,
+            )
+            return {
+                'updated_spread': updated_spread,
+                'updated_adv': updated_adv,
+            }
 
         except Exception as exc:
             logger.error(
                 'universe_metadata_refresh_failed', error=str(exc),
             )
+            return {'error': str(exc)}
+
+
+@celery.task(name='app.data.record_daily_performance')
+def record_daily_performance():
+    """Compute and persist daily performance metrics."""
+    from app import create_app
+    app = create_app()
+    with app.app_context():
+        from app.extensions import db as _db, redis_client
+        from app.risk.performance_recorder import PerformanceRecorder
+
+        try:
+            recorder = PerformanceRecorder(_db.session, redis_client)
+            result = recorder.record_daily()
+            logger.info('daily_performance_recorded', **result)
+            return result
+        except Exception as exc:
+            logger.error('daily_performance_failed', error=str(exc))
             return {'error': str(exc)}

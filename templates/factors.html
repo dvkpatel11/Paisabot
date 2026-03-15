@@ -138,22 +138,24 @@ function triggerCompute() {
   btn.textContent = 'Computing...';
   status.textContent = 'Computing factors and signals...';
 
-  fetch('/api/data/compute', {method: 'POST', headers: {'Content-Type': 'application/json'}})
+  fetch('/api/data/compute', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sync: true}),
+  })
     .then(r => r.json())
     .then(data => {
       if (data.error) {
         status.textContent = 'Error: ' + data.error;
-      } else if (data.task_id) {
-        status.textContent = 'Dispatched (task ' + data.task_id.slice(0, 8) + '...) — refresh in ~30s';
       } else {
-        status.textContent = 'Complete — refreshing...';
+        status.textContent = 'Complete — ' + (data.symbols || 0) + ' symbols, ' + (data.signals || 0) + ' signals. Refreshing...';
         setTimeout(() => location.reload(), 2000);
       }
       btn.disabled = false;
       btn.textContent = 'Compute Factors';
     })
     .catch(() => {
-      status.textContent = 'Failed — check Celery worker is running';
+      status.textContent = 'Computation failed — check server logs';
       btn.disabled = false;
       btn.textContent = 'Compute Factors';
     });

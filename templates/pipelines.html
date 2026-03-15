@@ -17,6 +17,8 @@
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <button class="btn" id="btn-backfill" onclick="triggerBackfill(false)">Run Backfill (Celery)</button>
       <button class="btn" id="btn-backfill-sync" onclick="triggerBackfill(true)">Run Backfill (Sync)</button>
+      <button class="btn" id="btn-pipeline" onclick="triggerPipeline()" style="background:var(--green);color:#000">Run Pipeline</button>
+      <button class="btn" id="btn-ws-toggle" onclick="toggleWebSocket()">Start WebSocket</button>
       <span class="text-muted" id="data-action-status" style="font-size:12px"></span>
     </div>
   </div>
@@ -180,13 +182,99 @@ function loadDataStatus() {
     })).sort((a, b) => a.symbol.localeCompare(b.symbol));
 
     if (!window._dataTableCreated) {
-      PaisaTables.create('data-status-table', cols);
+      PaisaTables.create('data-status-table', cols, {maxHeight: 300});
       window._dataTableCreated = true;
     }
     PaisaTables.setData('data-status-table', rows);
+
+    // Log for debugging
+    console.log('[Paisabot] data/status:', data.bars_total_symbols, 'symbols,', rows.length, 'rows');
   });
 }
 
-document.addEventListener('DOMContentLoaded', loadDataStatus);
+function triggerPipeline() {
+  const btn = document.getElementById('btn-pipeline');
+  const status = document.getElementById('data-action-status');
+  btn.disabled = true;
+  btn.textContent = 'Running pipeline...';
+  status.textContent = 'Executing: signals → portfolio → risk → execution...';
+
+  fetch('/api/pipeline/run', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sync: true}),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        status.textContent = 'Pipeline error: ' + data.error;
+      } else if (data.reason) {
+        status.textContent = 'Pipeline stopped at ' + (data.stage || '?') + ': ' + data.reason;
+      } else {
+        const parts = [];
+        if (data.n_signals) parts.push(data.n_signals + ' signals');
+        if (data.n_orders) parts.push(data.n_orders + ' orders');
+        if (data.n_approved) parts.push(data.n_approved + ' approved');
+        if (data.n_filled) parts.push(data.n_filled + ' filled');
+        if (data.n_blocked) parts.push(data.n_blocked + ' blocked');
+        status.textContent = 'Pipeline complete: ' + parts.join(', ') + ' | Regime: ' + (data.regime || '?');
+      }
+      btn.disabled = false;
+      btn.textContent = 'Run Pipeline';
+    })
+    .catch(() => {
+      status.textContent = 'Pipeline failed — check server logs';
+      btn.disabled = false;
+      btn.textContent = 'Run Pipeline';
+    });
+}
+
+function toggleWebSocket() {
+  const btn = document.getElementById('btn-ws-toggle');
+  const status = document.getElementById('data-action-status');
+
+  fetch('/api/data/websocket/status').then(r => r.json()).then(data => {
+    if (data.running) {
+      btn.disabled = true;
+      fetch('/api/data/websocket/stop', {method: 'POST'})
+        .then(r => r.json())
+        .then(() => {
+          btn.textContent = 'Start WebSocket';
+          btn.disabled = false;
+          status.textContent = 'WebSocket stopped';
+        });
+    } else {
+      btn.disabled = true;
+      btn.textContent = 'Connecting...';
+      fetch('/api/data/websocket/start', {method: 'POST'})
+        .then(r => r.json())
+        .then(d => {
+          if (d.error) {
+            status.textContent = 'WebSocket error: ' + d.error;
+            btn.textContent = 'Start WebSocket';
+          } else {
+            btn.textContent = 'Stop WebSocket';
+            status.textContent = 'WebSocket streaming ' + (d.symbols || 0) + ' symbols';
+          }
+          btn.disabled = false;
+        });
+    }
+  });
+}
+
+// Check WS status on load
+function checkWsStatus() {
+  fetch('/api/data/websocket/status').then(r => r.json()).then(data => {
+    const btn = document.getElementById('btn-ws-toggle');
+    if (data.running) {
+      btn.textContent = 'Stop WebSocket';
+    }
+  }).catch(() => {});
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  loadDataStatus();
+  checkWsStatus();
+});
 </script>
 {% endblock %}

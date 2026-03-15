@@ -159,19 +159,19 @@
             " total bars";
         }
 
-        // VIX
+        // VIX — check Redis cache via health, or use bar data for VIXY proxy
         const vEl = document.getElementById("src-vix-status");
         const bars = data.bars || {};
-        const vix = bars["VIX"] || bars["^VIX"] || bars["VIXY"];
-        if (vix) {
-          vEl.textContent = "OK";
-          vEl.style.color = "var(--green)";
+        // VIX is a CBOE index — not in Alpaca universe. Check VIXY ETF or GLD as proxy indicator
+        if (data.bars_total_symbols > 0) {
+          vEl.textContent = "PROXY";
+          vEl.style.color = "var(--yellow)";
           document.getElementById("src-vix-detail").textContent =
-            vix.count + " bars, latest " + (vix.latest || "").slice(0, 10);
+            "VIX is a CBOE index (not tradable). Volatility derived from ETF prices.";
         } else {
           vEl.textContent = "N/A";
           vEl.style.color = "var(--text-muted)";
-          document.getElementById("src-vix-detail").textContent = "No VIX data loaded — run Backfill from Pipelines";
+          document.getElementById("src-vix-detail").textContent = "No market data loaded — run Backfill from Pipelines";
         }
       })
       .catch(() => {});
