@@ -88,118 +88,93 @@
 </style>
 {% endblock %} {% block scripts %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-  checkSources();
-  loadPrices();
-  loadFactors();
-  loadSignals();
-  loadTrades();
-});
-
-function checkSources() {
-  fetch('/api/health').then(r => r.json()).then(data => {
-    const comps = data.components || {};
-    const details = data.details || {};
-
-    // Redis
-    const rOk = comps.redis === 'ok';
-    const rEl = document.getElementById('src-redis-status');
-    rEl.textContent = rOk ? 'OK' : 'DOWN';
-    rEl.style.color = rOk ? 'var(--green)' : 'var(--red)';
-    document.getElementById('src-redis-detail').textContent = details.redis || (rOk ? 'Connected' : 'Connection failed');
-
-    // DB
-    const dOk = comps.database === 'ok';
-    const dEl = document.getElementById('src-db-status');
-    dEl.textContent = dOk ? 'OK' : 'DOWN';
-    dEl.style.color = dOk ? 'var(--green)' : 'var(--red)';
-    document.getElementById('src-db-detail').textContent = details.database || (dOk ? 'Connected' : 'Connection failed');
-
-    // Alpaca
-    const aEl = document.getElementById('src-alpaca-status');
-    if (comps.alpaca === 'ok') {
-      aEl.textContent = 'OK';
-      aEl.style.color = 'var(--green)';
-      document.getElementById('src-alpaca-detail').textContent =
-        'Account: ' + (data.alpaca_account || 'connected');
-    } else if (comps.alpaca === 'error') {
-      aEl.textContent = 'ERR';
-      aEl.style.color = 'var(--red)';
-      document.getElementById('src-alpaca-detail').textContent =
-        details.alpaca || 'Key configured but connection failed';
-    } else {
-      aEl.textContent = 'N/A';
-      aEl.style.color = 'var(--text-muted)';
-      document.getElementById('src-alpaca-detail').textContent =
-        details.alpaca || 'No API key configured';
-    }
-  }).catch(err => {
-    ['src-alpaca-status', 'src-redis-status', 'src-db-status'].forEach(id => {
-      const el = document.getElementById(id);
-      el.textContent = 'ERR';
-      el.style.color = 'var(--red)';
-    });
-    document.getElementById('src-redis-detail').textContent = 'Health check failed: ' + err.message;
+  document.addEventListener("DOMContentLoaded", function () {
+    checkSources();
+    loadPrices();
+    loadFactors();
+    loadSignals();
+    loadTrades();
   });
 
-  // VIX + DB detail — from data status
-  fetch('/api/data/status').then(r => r.json()).then(data => {
-    // DB bar count — only override if health check showed OK
-    const dbDetail = document.getElementById('src-db-detail');
-    if (dbDetail.textContent === 'Connected') {
-      dbDetail.textContent =
-        data.bars_total_symbols + ' symbols, ' +
-        Object.values(data.bars || {}).reduce((s, b) => s + b.count, 0) + ' total bars';
-    }
+  function checkSources() {
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((data) => {
+        const comps = data.components || {};
+        const details = data.details || {};
 
-    // VIX — check Redis cache via health, or use bar data for VIXY proxy
-    const vEl = document.getElementById('src-vix-status');
-    const bars = data.bars || {};
-    // VIX is a CBOE index — not in Alpaca universe. Check VIXY ETF or GLD as proxy indicator
-    if (data.bars_total_symbols > 0) {
-      vEl.textContent = 'PROXY';
-      vEl.style.color = 'var(--yellow)';
-      document.getElementById('src-vix-detail').textContent =
-        'VIX is a CBOE index (not tradable). Volatility derived from ETF prices.';
-    } else {
-      vEl.textContent = 'N/A';
-      vEl.style.color = 'var(--text-muted)';
-      document.getElementById('src-vix-detail').textContent = 'No market data loaded — run Backfill from Pipelines';
-    }
-  }).catch(() => {});
-}
+        // Redis
+        const rOk = comps.redis === "ok";
+        const rEl = document.getElementById("src-redis-status");
+        rEl.textContent = rOk ? "OK" : "DOWN";
+        rEl.style.color = rOk ? "var(--green)" : "var(--red)";
+        document.getElementById("src-redis-detail").textContent =
+          details.redis || (rOk ? "Connected" : "Connection failed");
 
         // DB
-        const db = data.database || {};
+        const dOk = comps.database === "ok";
         const dEl = document.getElementById("src-db-status");
-        dEl.textContent = db.connected ? "OK" : "DOWN";
-        dEl.style.color = db.connected ? "var(--green)" : "var(--red)";
-        document.getElementById("src-db-detail").textContent = db.bar_count ? db.bar_count + " bars" : "";
+        dEl.textContent = dOk ? "OK" : "DOWN";
+        dEl.style.color = dOk ? "var(--green)" : "var(--red)";
+        document.getElementById("src-db-detail").textContent =
+          details.database || (dOk ? "Connected" : "Connection failed");
+
+        // Alpaca
+        const aEl = document.getElementById("src-alpaca-status");
+        if (comps.alpaca === "ok") {
+          aEl.textContent = "OK";
+          aEl.style.color = "var(--green)";
+          document.getElementById("src-alpaca-detail").textContent = "Account: " + (data.alpaca_account || "connected");
+        } else if (comps.alpaca === "error") {
+          aEl.textContent = "ERR";
+          aEl.style.color = "var(--red)";
+          document.getElementById("src-alpaca-detail").textContent =
+            details.alpaca || "Key configured but connection failed";
+        } else {
+          aEl.textContent = "N/A";
+          aEl.style.color = "var(--text-muted)";
+          document.getElementById("src-alpaca-detail").textContent = details.alpaca || "No API key configured";
+        }
       })
-      .catch(() => {
+      .catch((err) => {
         ["src-alpaca-status", "src-redis-status", "src-db-status"].forEach((id) => {
-          document.getElementById(id).textContent = "?";
+          const el = document.getElementById(id);
+          el.textContent = "ERR";
+          el.style.color = "var(--red)";
         });
+        document.getElementById("src-redis-detail").textContent = "Health check failed: " + err.message;
       });
 
-    // VIX — just check data status
+    // VIX + DB detail — from data status
     fetch("/api/data/status")
       .then((r) => r.json())
       .then((data) => {
+        // DB bar count — only override if health check showed OK
+        const dbDetail = document.getElementById("src-db-detail");
+        if (dbDetail.textContent === "Connected") {
+          dbDetail.textContent =
+            data.bars_total_symbols +
+            " symbols, " +
+            Object.values(data.bars || {}).reduce((s, b) => s + b.count, 0) +
+            " total bars";
+        }
+
+        // VIX — check Redis cache via health, or use bar data for VIXY proxy
         const vEl = document.getElementById("src-vix-status");
         const bars = data.bars || {};
-        if (bars["VIX"] || bars["^VIX"]) {
-          vEl.textContent = "OK";
-          vEl.style.color = "var(--green)";
-          const vix = bars["VIX"] || bars["^VIX"];
+        // VIX is a CBOE index — not in Alpaca universe. Check VIXY ETF or GLD as proxy indicator
+        if (data.bars_total_symbols > 0) {
+          vEl.textContent = "PROXY";
+          vEl.style.color = "var(--yellow)";
           document.getElementById("src-vix-detail").textContent =
-            vix.count + " bars, latest " + (vix.latest || "").slice(0, 10);
+            "VIX is a CBOE index (not tradable). Volatility derived from ETF prices.";
         } else {
           vEl.textContent = "N/A";
           vEl.style.color = "var(--text-muted)";
-          document.getElementById("src-vix-detail").textContent = "No VIX data loaded";
+          document.getElementById("src-vix-detail").textContent = "No market data loaded — run Backfill from Pipelines";
         }
-      });
+      })
+      .catch(() => {});
   }
 
   function loadPrices() {
@@ -213,14 +188,14 @@ function checkSources() {
           { title: "Latest", field: "latest", width: 110 },
         ];
 
-function loadFactors() {
-  fetch('/api/scores').then(r => r.json()).then(scores => {
-    const symbols = Object.keys(scores).sort();
-    if (symbols.length === 0) {
-      document.getElementById('factor-table').innerHTML =
-        '<div style="padding:20px;color:var(--text-muted);font-size:13px">No factor scores computed yet. Use <a href="/factors" style="color:var(--accent)">Factors</a> > Compute Factors.</div>';
-      return;
-    }
+        const rows = Object.entries(data.bars || {})
+          .map(([sym, info]) => ({
+            symbol: sym,
+            count: info.count,
+            earliest: (info.earliest || "").slice(0, 10),
+            latest: (info.latest || "").slice(0, 10),
+          }))
+          .sort((a, b) => a.symbol.localeCompare(b.symbol));
 
         PaisaTables.create("prices-table", cols);
         PaisaTables.setData("prices-table", rows);
@@ -234,7 +209,7 @@ function loadFactors() {
         const symbols = Object.keys(scores).sort();
         if (symbols.length === 0) {
           document.getElementById("factor-table").innerHTML =
-            '<div style="padding:20px;color:var(--text-muted);font-size:13px">No factor scores computed yet. Use Pipelines > Compute Factors.</div>';
+            '<div style="padding:20px;color:var(--text-muted);font-size:13px">No factor scores computed yet. Use <a href="/factors" style="color:var(--accent)">Factors</a> > Compute Factors.</div>';
           return;
         }
 
