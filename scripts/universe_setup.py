@@ -1,17 +1,29 @@
 """Populate etf_universe table from research/ETF_universe.csv.
 
-Usage: python scripts/universe_setup.py
+All ETFs start as watchlist-only (is_active=True, in_active_set=False).
+Use the API or --activate flag to move ETFs into the active trading set.
+
+Usage:
+    python scripts/universe_setup.py              # watchlist only
+    python scripts/universe_setup.py --activate   # also activate core ETFs
 """
 import csv
 import os
 import sys
-from datetime import date
+from datetime import date, datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from app import create_app
 from app.extensions import db
 from app.models.etf_universe import ETFUniverse
+
+# Core ETFs to activate by default when --activate is passed
+DEFAULT_ACTIVE_SET = {
+    'SPY', 'QQQ', 'IWM',
+    'XLK', 'XLF', 'XLE', 'XLV', 'XLI',
+    'XLC', 'XLY', 'XLP', 'XLU', 'XLB',
+}
 
 # MT5 symbol mapping (broker-dependent, Admiral Markets style)
 MT5_SYMBOL_MAP = {
@@ -38,7 +50,7 @@ MT5_SYMBOL_MAP = {
 }
 
 
-def setup():
+def setup(activate_core: bool = False):
     app = create_app('development')
     csv_path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)),
@@ -55,6 +67,9 @@ def setup():
                 if existing:
                     continue
 
+                should_activate = activate_core and symbol in DEFAULT_ACTIVE_SET
+                now = datetime.now(timezone.utc)
+
                 etf = ETFUniverse(
                     symbol=symbol,
                     name=row['name'].strip(),
@@ -66,6 +81,10 @@ def setup():
                     inception_date=date.fromisoformat(row['inception_date'].strip()),
                     options_market=row['options_market'].strip().lower() == 'true',
                     is_active=True,
+                    in_active_set=should_activate,
+                    active_set_reason='initial_setup' if should_activate else None,
+                    active_set_changed_at=now if should_activate else None,
+                    added_at=now,
                     mt5_symbol=MT5_SYMBOL_MAP.get(symbol, f'{symbol}.US'),
                 )
                 db.session.add(etf)
@@ -73,8 +92,10 @@ def setup():
 
             db.session.commit()
             total = ETFUniverse.query.count()
-            print(f'Added {count} ETFs ({total} total in universe)')
+            active = ETFUniverse.query.filter_by(in_active_set=True).count()
+            print(f'Added {count} ETFs ({total} total in universe, {active} in active set)')
 
 
 if __name__ == '__main__':
-    setup()
+    activate = '--activate' in sys.argv
+    setup(activate_core=activate)

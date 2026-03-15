@@ -773,28 +773,100 @@ def force_liquidate():
 
 # ── universe ───────────────────────────────────────────────────────
 
+def _serialize_etf(e) -> dict:
+    """Serialize an ETFUniverse row with all tracking columns."""
+    return {
+        'symbol': e.symbol,
+        'name': e.name,
+        'sector': e.sector,
+        'aum_bn': _to_float(e.aum_bn),
+        'avg_daily_vol_m': _to_float(e.avg_daily_vol_m),
+        'spread_bps': _to_float(e.spread_est_bps),
+        'liquidity_score': _to_float(e.liquidity_score),
+        'options': e.options_market,
+        'in_active_set': e.in_active_set,
+        'active_set_reason': e.active_set_reason,
+        'notes': e.notes,
+        'your_rating': e.your_rating,
+        'tags': e.tags,
+        'last_signal_type': e.last_signal_type,
+        'last_composite_score': _to_float(e.last_composite_score),
+        'last_signal_at': e.last_signal_at.isoformat() if e.last_signal_at else None,
+        'perf_1w': _to_float(e.perf_1w),
+        'perf_1m': _to_float(e.perf_1m),
+        'perf_3m': _to_float(e.perf_3m),
+        'correlation_to_spy': _to_float(e.correlation_to_spy),
+    }
+
+
 @api_bp.route('/universe', methods=['GET'])
 def get_universe():
-    """Get ETF universe with metadata."""
+    """Get full ETF watchlist with tracking data.
+
+    Query params:
+        active_set=true  — filter to active trading set only
+    """
     from app.models.etf_universe import ETFUniverse
 
-    etfs = ETFUniverse.query.filter_by(is_active=True).order_by(
-        ETFUniverse.symbol,
-    ).all()
+    query = ETFUniverse.query.filter_by(is_active=True)
 
-    return jsonify([
-        {
-            'symbol': e.symbol,
-            'name': e.name,
-            'sector': e.sector,
-            'aum_bn': _to_float(e.aum_bn),
-            'avg_daily_vol_m': _to_float(e.avg_daily_vol_m),
-            'spread_bps': _to_float(e.spread_est_bps),
-            'liquidity_score': _to_float(e.liquidity_score),
-            'options': e.options_market,
-        }
-        for e in etfs
-    ])
+    if request.args.get('active_set', '').lower() == 'true':
+        query = query.filter_by(in_active_set=True)
+
+    etfs = query.order_by(ETFUniverse.symbol).all()
+    return jsonify([_serialize_etf(e) for e in etfs])
+
+
+@api_bp.route('/universe/<symbol>/active-set', methods=['PATCH'])
+@api_login_required
+def toggle_active_set(symbol: str):
+    """Add or remove an ETF from the active trading set.
+
+    Body: {"in_active_set": true/false, "reason": "optional reason"}
+    """
+    from app.models.etf_universe import ETFUniverse
+
+    etf = ETFUniverse.query.filter_by(symbol=symbol.upper()).first()
+    if not etf:
+        return jsonify({'error': f'{symbol} not found in universe'}), 404
+
+    data = request.get_json()
+    if data is None or 'in_active_set' not in data:
+        return jsonify({'error': 'in_active_set required'}), 400
+
+    etf.in_active_set = bool(data['in_active_set'])
+    etf.active_set_reason = data.get('reason', '')
+    etf.active_set_changed_at = datetime.now(timezone.utc)
+    db.session.commit()
+
+    return jsonify({
+        'symbol': etf.symbol,
+        'in_active_set': etf.in_active_set,
+        'reason': etf.active_set_reason,
+    })
+
+
+@api_bp.route('/universe/<symbol>', methods=['PATCH'])
+@api_login_required
+def update_universe_etf(symbol: str):
+    """Update tracking fields on a watchlist ETF.
+
+    Body: {"notes": "...", "your_rating": 4, "tags": "momentum,defensive"}
+    """
+    from app.models.etf_universe import ETFUniverse
+
+    etf = ETFUniverse.query.filter_by(symbol=symbol.upper()).first()
+    if not etf:
+        return jsonify({'error': f'{symbol} not found'}), 404
+
+    data = request.get_json() or {}
+    allowed = ('notes', 'your_rating', 'tags')
+    for field in allowed:
+        if field in data:
+            setattr(etf, field, data[field])
+
+    db.session.commit()
+    return jsonify(_serialize_etf(etf))
 
 
 # ── backtest ───────────────────────────────────────────────────────
@@ -1081,11 +1153,13 @@ def trigger_compute():
         from app.signals.signal_generator import SignalGenerator
         from app.models.etf_universe import ETFUniverse
 
-        etfs = ETFUniverse.query.filter_by(is_active=True).all()
+        etfs = ETFUniverse.query.filter_by(
+            is_active=True, in_active_set=True,
+        ).all()
         symbols = [e.symbol for e in etfs]
 
         if not symbols:
-            return jsonify({'error': 'No active ETFs in universe'}), 400
+            return jsonify({'error': 'No ETFs in active set'}), 400
 
         # Compute factors (persists to DB + Redis)
         registry = FactorRegistry(
