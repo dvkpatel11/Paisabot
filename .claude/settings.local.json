@@ -63,7 +63,10 @@
       "Bash(xargs ls:*)",
       "Bash(python3 -c \"from alpaca.data.live import StockDataStream; print\\(StockDataStream.__doc__[:200]\\)\")",
       "Bash(python3 -c \"import alpaca; print\\(alpaca.__version__\\)\")",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(python -c \"import numpy; print\\(f''numpy: {numpy.__version__}''\\); import arch; print\\(f''arch: {arch.__version__}''\\)\")",
+      "Bash(pip show:*)",
+      "Bash(python -c \"import scipy; print\\(scipy.__version__\\)\")"
     ]
   }
 }
