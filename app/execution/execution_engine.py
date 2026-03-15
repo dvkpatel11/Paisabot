@@ -7,6 +7,7 @@ import structlog
 
 from app.execution.broker_base import BrokerBase
 from app.execution.order_manager import OrderManager
+from app.execution.position_tracker import PositionTracker
 from app.execution.slippage_tracker import SlippageTracker
 
 logger = structlog.get_logger()
@@ -49,6 +50,7 @@ class ExecutionEngine:
             config_loader=config_loader,
         )
         self.slippage_tracker = SlippageTracker(config_loader)
+        self.position_tracker = PositionTracker(db_session, redis_client) if db_session else None
 
     # ── main entry points ──────────────────────────────────────────
 
@@ -61,9 +63,10 @@ class ExecutionEngine:
         if results is None:
             return []
 
-        # Persist trades to DB
+        # Persist trades + update positions
         for result in results:
             self._persist_trade(result)
+            self._update_position(result)
 
         # Cache execution summary
         self._cache_execution_state(results)
@@ -86,6 +89,7 @@ class ExecutionEngine:
 
         for result in results:
             self._persist_trade(result)
+            self._update_position(result)
 
         self._cache_execution_state(results)
         return results
@@ -203,6 +207,17 @@ class ExecutionEngine:
             )
 
         return result
+
+    # ── position tracking ───────────────────────────────────────────
+
+    def _update_position(self, result: dict) -> None:
+        """Update position records after a fill."""
+        if self.position_tracker is None:
+            return
+        try:
+            self.position_tracker.update_from_fill(result)
+        except Exception as exc:
+            self._log.error('position_update_failed', error=str(exc))
 
     # ── persistence ────────────────────────────────────────────────
 

@@ -1,0 +1,121 @@
+"""Real-time market data via Alpaca WebSocket streaming.
+
+Subscribes to minute bars for active ETFs and publishes to Redis
+for dashboard consumption and risk monitoring.
+"""
+from __future__ import annotations
+
+import json
+import threading
+from datetime import datetime, timezone
+
+import structlog
+
+logger = structlog.get_logger()
+
+
+class AlpacaWebSocketListener:
+    """WebSocket consumer for real-time bars via alpaca-py StockDataStream.
+
+    Subscribes to minute bars for all active ETFs.
+    On each bar: update Redis price cache + publish to channel:bars.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        secret_key: str,
+        redis_client,
+    ):
+        self._api_key = api_key
+        self._secret_key = secret_key
+        self._redis = redis_client
+        self._stream = None
+        self._thread: threading.Thread | None = None
+        self._running = False
+        self._symbols: list[str] = []
+        self._log = logger.bind(component='ws_listener')
+
+    def start(self, symbols: list[str]) -> None:
+        """Subscribe to bars for given symbols and start streaming.
+
+        Runs the WebSocket connection in a daemon thread.
+        """
+        if self._running:
+            self._log.warning('ws_already_running')
+            return
+
+        try:
+            from alpaca.data.live import StockDataStream
+        except ImportError:
+            self._log.error('alpaca_streaming_not_available')
+            return
+
+        self._symbols = symbols
+        self._stream = StockDataStream(self._api_key, self._secret_key)
+
+        async def on_bar(bar):
+            self._handle_bar(bar)
+
+        self._stream.subscribe_bars(on_bar, *symbols)
+
+        self._running = True
+        self._thread = threading.Thread(
+            target=self._run_stream,
+            daemon=True,
+            name='alpaca-ws',
+        )
+        self._thread.start()
+        self._log.info('ws_started', symbols=len(symbols))
+
+    def stop(self) -> None:
+        """Stop the WebSocket connection."""
+        self._running = False
+        if self._stream:
+            try:
+                self._stream.stop()
+            except Exception:
+                pass
+        self._stream = None
+        self._thread = None
+        self._log.info('ws_stopped')
+
+    @property
+    def is_running(self) -> bool:
+        return self._running and self._thread is not None and self._thread.is_alive()
+
+    def _run_stream(self) -> None:
+        """Run the blocking stream loop."""
+        try:
+            self._stream.run()
+        except Exception as exc:
+            self._log.error('ws_stream_error', error=str(exc))
+        finally:
+            self._running = False
+
+    def _handle_bar(self, bar) -> None:
+        """Process incoming bar: Redis cache + pub/sub."""
+        try:
+            symbol = bar.symbol
+            close_price = float(bar.close)
+            timestamp = bar.timestamp.isoformat() if bar.timestamp else datetime.now(timezone.utc).isoformat()
+
+            bar_data = {
+                'symbol': symbol,
+                'timestamp': timestamp,
+                'open': float(bar.open),
+                'high': float(bar.high),
+                'low': float(bar.low),
+                'close': close_price,
+                'volume': int(bar.volume),
+                'vwap': float(bar.vwap) if hasattr(bar, 'vwap') and bar.vwap else None,
+            }
+
+            # 1. Update latest price cache (for risk monitoring)
+            self._redis.hset('cache:prices:latest', symbol, str(close_price))
+
+            # 2. Publish to channel:bars (lossy, for dashboard)
+            self._redis.publish('channel:bars', json.dumps(bar_data))
+
+        except Exception as exc:
+            self._log.error('ws_bar_handle_error', error=str(exc))

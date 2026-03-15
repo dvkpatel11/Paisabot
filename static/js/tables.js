@@ -5,12 +5,18 @@ const PaisaTables = (function() {
   const instances = {};
 
   function create(containerId, columns, options) {
+    // Destroy existing instance if re-creating
+    if (instances[containerId]) {
+      try { instances[containerId].destroy(); } catch(e) {}
+    }
+
     const opts = Object.assign({
       layout: 'fitColumns',
       height: 'auto',
       maxHeight: 400,
       placeholder: 'No data',
       columns: columns,
+      renderVertical: 'virtual',
     }, options || {});
 
     instances[containerId] = new Tabulator('#' + containerId, opts);

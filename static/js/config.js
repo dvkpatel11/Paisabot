@@ -17,6 +17,14 @@ const PaisaConfig = (function() {
         }
 
         let html = '<form class="config-form" id="config-form-' + category + '">';
+        // Special dropdown fields for known config keys
+        var DROPDOWN_FIELDS = {
+          'broker': ['alpaca', 'mt5'],
+          'default_broker': ['alpaca', 'mt5'],
+          'operational_mode': ['research', 'simulation', 'live'],
+          'rebalance_frequency': ['daily', 'weekly', 'monthly'],
+        };
+
         Object.entries(data).forEach(function(entry) {
           const key = entry[0];
           const info = entry[1];
@@ -24,8 +32,24 @@ const PaisaConfig = (function() {
           const desc = info.description || '';
 
           html += '<label class="config-key" title="' + desc + '">' + key + '</label>';
-          html += '<input class="config-input" name="' + key + '" value="' + value + '" title="' + desc + '">';
-          html += '<span class="text-muted" style="font-size:11px">' + (info.type || '') + '</span>';
+
+          var options = DROPDOWN_FIELDS[key];
+          if (options) {
+            html += '<select class="config-input" name="' + key + '" title="' + desc + '">';
+            options.forEach(function(opt) {
+              html += '<option value="' + opt + '"' + (opt === value ? ' selected' : '') + '>' + opt + '</option>';
+            });
+            html += '</select>';
+          } else if (info.type === 'bool') {
+            html += '<select class="config-input" name="' + key + '" title="' + desc + '">';
+            html += '<option value="true"' + (value === 'true' ? ' selected' : '') + '>true</option>';
+            html += '<option value="false"' + (value === 'false' ? ' selected' : '') + '>false</option>';
+            html += '</select>';
+          } else {
+            html += '<input class="config-input" name="' + key + '" value="' + value + '" title="' + desc + '">';
+          }
+
+          html += '<span class="text-muted" style="font-size:11px">' + (info.type || '') + (desc ? ' — ' + desc : '') + '</span>';
         });
         html += '</form>';
         html += '<div style="margin-top:12px">';
