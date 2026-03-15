@@ -77,7 +77,8 @@
       "Bash(grep -i \"redis key\" /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/pedantic-cartwright/research/*.md)",
       "Bash(grep -i \"numpy\" /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/pedantic-cartwright/research/*.md)",
       "Bash(alembic upgrade:*)",
-      "Bash(ls \"C:\\\\Users\\\\deepv\\\\Desktop\\\\Projects\\\\Paisabot\\\\.claude\\\\worktrees\\\\pedantic-cartwright\\\\migrations\\\\versions\\\\4ac29fbec118\"*)"
+      "Bash(ls \"C:\\\\Users\\\\deepv\\\\Desktop\\\\Projects\\\\Paisabot\\\\.claude\\\\worktrees\\\\pedantic-cartwright\\\\migrations\\\\versions\\\\4ac29fbec118\"*)",
+      "Bash(python3 -c \":*)"
     ]
   }
 }

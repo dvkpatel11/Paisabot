@@ -823,6 +823,9 @@ def toggle_active_set(symbol: str):
     """Add or remove an ETF from the active trading set.
 
     Body: {"in_active_set": true/false, "reason": "optional reason"}
+
+    On activation: dispatches backfill, syncs Redis active-set cache,
+    adds to WebSocket subscription, publishes config_change event.
     """
     from app.models.etf_universe import ETFUniverse
 
@@ -834,15 +837,52 @@ def toggle_active_set(symbol: str):
     if data is None or 'in_active_set' not in data:
         return jsonify({'error': 'in_active_set required'}), 400
 
-    etf.in_active_set = bool(data['in_active_set'])
+    activate = bool(data['in_active_set'])
+    etf.in_active_set = activate
     etf.active_set_reason = data.get('reason', '')
     etf.active_set_changed_at = datetime.now(timezone.utc)
     db.session.commit()
 
+    sym = etf.symbol
+    onboarding = {}
+
+    if activate:
+        # 1. Dispatch historical backfill (756 days for factor lookbacks)
+        try:
+            from app.data.tasks import backfill_bars
+            backfill_bars.delay(sym, 756)
+            onboarding['backfill'] = 'dispatched'
+        except Exception as exc:
+            onboarding['backfill'] = f'failed: {exc}'
+
+        # 2. Add to Redis active-set cache
+        redis_client.sadd('config:active_symbols', sym)
+
+        # 3. Add to WebSocket subscription if running
+        if _ws_listener and _ws_listener.is_running:
+            _ws_listener.add_symbol(sym)
+            onboarding['websocket'] = 'subscribed'
+        else:
+            onboarding['websocket'] = 'listener_not_running'
+    else:
+        # Remove from Redis active-set cache
+        redis_client.srem('config:active_symbols', sym)
+        onboarding['note'] = 'removed; positions exit at next rebalance'
+
+    # 4. Publish config change event for dashboard
+    redis_client.publish('channel:config_change', json.dumps({
+        'type': 'active_set_changed',
+        'symbol': sym,
+        'in_active_set': activate,
+        'reason': etf.active_set_reason,
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+    }))
+
     return jsonify({
-        'symbol': etf.symbol,
+        'symbol': sym,
         'in_active_set': etf.in_active_set,
         'reason': etf.active_set_reason,
+        'onboarding': onboarding,
     })
 
 
@@ -1309,6 +1349,23 @@ def pipeline_status():
 
 # ── websocket control ─────────────────────────────────────────────
 
+def _sync_active_set_cache():
+    """Rebuild Redis SET config:active_symbols from DB truth."""
+    from app.models.etf_universe import ETFUniverse
+
+    etfs = ETFUniverse.query.filter_by(
+        is_active=True, in_active_set=True,
+    ).all()
+    symbols = [e.symbol for e in etfs]
+
+    pipe = redis_client.pipeline()
+    pipe.delete('config:active_symbols')
+    if symbols:
+        pipe.sadd('config:active_symbols', *symbols)
+    pipe.execute()
+    return symbols
+
+
 # Global reference to the WebSocket listener instance
 _ws_listener = None
 
@@ -1333,6 +1390,9 @@ def start_websocket():
 
     etfs = ETFUniverse.query.filter_by(is_active=True).all()
     symbols = [e.symbol for e in etfs]
+
+    # Sync Redis active-set cache on startup
+    _sync_active_set_cache()
 
     _ws_listener = AlpacaWebSocketListener(api_key, secret_key, redis_client)
     _ws_listener.start(symbols)
