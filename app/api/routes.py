@@ -15,17 +15,32 @@ from app.extensions import db, redis_client
 def health():
     """System health check with component status."""
     components = {}
+    details = {}
+
+    # Redis
     try:
         redis_client.ping()
         components['redis'] = 'ok'
-    except Exception:
+        try:
+            info = redis_client.info('memory')
+            used = info.get('used_memory_human', info.get(b'used_memory_human', '?'))
+            if isinstance(used, bytes):
+                used = used.decode()
+            details['redis'] = f'Connected, {used} used'
+        except Exception:
+            details['redis'] = 'Connected'
+    except Exception as exc:
         components['redis'] = 'error'
+        details['redis'] = str(exc)
 
+    # Database
     try:
         db.session.execute(db.text('SELECT 1'))
         components['database'] = 'ok'
-    except Exception:
+        details['database'] = 'Connected'
+    except Exception as exc:
         components['database'] = 'error'
+        details['database'] = str(exc)
 
     # Check Alpaca
     import os
@@ -42,20 +57,27 @@ def health():
             account = client.get_account()
             components['alpaca'] = 'ok'
             alpaca_account = account.account_number
-        except Exception:
+        except Exception as exc:
             components['alpaca'] = 'error'
+            details['alpaca'] = str(exc)
+    else:
+        details['alpaca'] = 'ALPACA_API_KEY not set in environment'
 
     # Check kill switches
     kill_switches = {}
-    for switch in ('trading', 'rebalance', 'all', 'force_liquidate'):
-        val = redis_client.get(f'kill_switch:{switch}')
-        kill_switches[switch] = val == b'1'
+    try:
+        for switch in ('trading', 'rebalance', 'all', 'force_liquidate'):
+            val = redis_client.get(f'kill_switch:{switch}')
+            kill_switches[switch] = val in (b'1', '1')
+    except Exception:
+        pass
 
     overall = 'ok' if all(v == 'ok' for v in components.values()) else 'degraded'
 
     result = {
         'status': overall,
         'components': components,
+        'details': details,
         'kill_switches': kill_switches,
         'timestamp': datetime.now(timezone.utc).isoformat(),
     }

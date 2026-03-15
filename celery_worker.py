@@ -45,3 +45,8 @@ def make_celery(app=None):
 
 
 celery = make_celery()
+
+# Import task modules AFTER celery instance is created so @celery.task
+# decorators register with this app. tasks.py does `from celery_worker
+# import celery` — so celery must exist before this import runs.
+import app.data.tasks  # noqa: E402, F401

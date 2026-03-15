@@ -85,50 +85,60 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function checkSources() {
-  // Health endpoint: returns {status, components: {redis: 'ok'|'error', database: 'ok'|'error'}, ...}
   fetch('/api/health').then(r => r.json()).then(data => {
     const comps = data.components || {};
+    const details = data.details || {};
 
     // Redis
     const rOk = comps.redis === 'ok';
     const rEl = document.getElementById('src-redis-status');
     rEl.textContent = rOk ? 'OK' : 'DOWN';
     rEl.style.color = rOk ? 'var(--green)' : 'var(--red)';
-    document.getElementById('src-redis-detail').textContent = rOk ? 'Connected' : 'Connection failed';
+    document.getElementById('src-redis-detail').textContent = details.redis || (rOk ? 'Connected' : 'Connection failed');
 
     // DB
     const dOk = comps.database === 'ok';
     const dEl = document.getElementById('src-db-status');
     dEl.textContent = dOk ? 'OK' : 'DOWN';
     dEl.style.color = dOk ? 'var(--green)' : 'var(--red)';
+    document.getElementById('src-db-detail').textContent = details.database || (dOk ? 'Connected' : 'Connection failed');
 
-    // Alpaca — check via separate API call
+    // Alpaca
     const aEl = document.getElementById('src-alpaca-status');
     if (comps.alpaca === 'ok') {
       aEl.textContent = 'OK';
       aEl.style.color = 'var(--green)';
-      document.getElementById('src-alpaca-detail').textContent = data.alpaca_account || 'Connected';
+      document.getElementById('src-alpaca-detail').textContent =
+        'Account: ' + (data.alpaca_account || 'connected');
     } else if (comps.alpaca === 'error') {
       aEl.textContent = 'ERR';
       aEl.style.color = 'var(--red)';
-      document.getElementById('src-alpaca-detail').textContent = 'Key configured but connection failed';
+      document.getElementById('src-alpaca-detail').textContent =
+        details.alpaca || 'Key configured but connection failed';
     } else {
       aEl.textContent = 'N/A';
       aEl.style.color = 'var(--text-muted)';
-      document.getElementById('src-alpaca-detail').textContent = 'No API key configured';
+      document.getElementById('src-alpaca-detail').textContent =
+        details.alpaca || 'No API key configured';
     }
-  }).catch(() => {
+  }).catch(err => {
     ['src-alpaca-status', 'src-redis-status', 'src-db-status'].forEach(id => {
-      document.getElementById(id).textContent = '?';
+      const el = document.getElementById(id);
+      el.textContent = 'ERR';
+      el.style.color = 'var(--red)';
     });
+    document.getElementById('src-redis-detail').textContent = 'Health check failed: ' + err.message;
   });
 
   // VIX + DB detail — from data status
   fetch('/api/data/status').then(r => r.json()).then(data => {
-    // DB bar count
-    document.getElementById('src-db-detail').textContent =
-      data.bars_total_symbols + ' symbols, ' +
-      Object.values(data.bars || {}).reduce((s, b) => s + b.count, 0) + ' total bars';
+    // DB bar count — only override if health check showed OK
+    const dbDetail = document.getElementById('src-db-detail');
+    if (dbDetail.textContent === 'Connected') {
+      dbDetail.textContent =
+        data.bars_total_symbols + ' symbols, ' +
+        Object.values(data.bars || {}).reduce((s, b) => s + b.count, 0) + ' total bars';
+    }
 
     // VIX
     const vEl = document.getElementById('src-vix-status');
@@ -141,7 +151,7 @@ function checkSources() {
     } else {
       vEl.textContent = 'N/A';
       vEl.style.color = 'var(--text-muted)';
-      document.getElementById('src-vix-detail').textContent = 'No VIX data — run Backfill from Pipelines';
+      document.getElementById('src-vix-detail').textContent = 'No VIX data loaded — run Backfill from Pipelines';
     }
   }).catch(() => {});
 }
@@ -172,7 +182,7 @@ function loadFactors() {
     const symbols = Object.keys(scores).sort();
     if (symbols.length === 0) {
       document.getElementById('factor-table').innerHTML =
-        '<div style="padding:20px;color:var(--text-muted);font-size:13px">No factor scores computed yet. Use Pipelines > Compute Factors.</div>';
+        '<div style="padding:20px;color:var(--text-muted);font-size:13px">No factor scores computed yet. Use <a href="/factors" style="color:var(--accent)">Factors</a> > Compute Factors.</div>';
       return;
     }
 
