@@ -78,7 +78,8 @@
       "Bash(grep -i \"numpy\" /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/pedantic-cartwright/research/*.md)",
       "Bash(alembic upgrade:*)",
       "Bash(ls \"C:\\\\Users\\\\deepv\\\\Desktop\\\\Projects\\\\Paisabot\\\\.claude\\\\worktrees\\\\pedantic-cartwright\\\\migrations\\\\versions\\\\4ac29fbec118\"*)",
-      "Bash(python3 -c \":*)"
+      "Bash(python3 -c \":*)",
+      "Bash(node -e \"require\\(''fs''\\).readFileSync\\(''static/js/config.js'',''utf8''\\); console.log\\(''config.js OK''\\)\")"
     ]
   }
 }
