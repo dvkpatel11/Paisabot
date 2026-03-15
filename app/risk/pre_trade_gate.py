@@ -39,7 +39,7 @@ class PreTradeGate:
             return self._config.is_kill_switch_active(switch)
         if self._redis is not None:
             val = self._redis.get(f'kill_switch:{switch}')
-            return val == b'1' or val == '1'
+            return val == '1'
         return False
 
     # ── config helpers ──────────────────────────────────────────────

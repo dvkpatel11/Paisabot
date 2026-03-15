@@ -89,6 +89,9 @@ class ContinuousMonitor:
             held_symbols, current_advs,
         )
 
+        # 6. Volatility scaling check
+        results['vol_scaling'] = self.check_vol_scaling(portfolio_returns)
+
         # Determine overall status
         overall = self._aggregate_status(results)
         results['overall_status'] = overall
@@ -108,6 +111,7 @@ class ContinuousMonitor:
             var_status=results['var']['status'],
             corr_status=results['correlation']['status'],
             liquidity_shocked=len(results['liquidity']['shocked']),
+            vol_scaling=results['vol_scaling']['action'],
         )
 
         return results
@@ -171,7 +175,7 @@ class ContinuousMonitor:
             is_halted = self._config.is_kill_switch_active('trading')
         elif self._redis is not None:
             val = self._redis.get('kill_switch:trading')
-            is_halted = val == b'1' or val == '1'
+            is_halted = val == '1'
 
         if not is_halted:
             return {

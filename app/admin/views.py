@@ -23,11 +23,11 @@ class PaisabotAdminIndex(AdminIndexView):
         kill_switches = {}
         for switch in ('trading', 'rebalance', 'all', 'force_liquidate'):
             val = redis_client.get(f'kill_switch:{switch}')
-            kill_switches[switch] = val == b'1'
+            kill_switches[switch] = val == '1'
 
         # Operational mode
         mode = redis_client.hget('config:system', 'operational_mode')
-        mode = mode.decode() if isinstance(mode, bytes) else (mode or 'unknown')
+        mode = mode or 'unknown'
 
         return self.render(
             'admin/index.html',
@@ -137,7 +137,7 @@ class KillSwitchView(BaseView):
         switches = {}
         for name in ('trading', 'rebalance', 'all', 'force_liquidate', 'sentiment', 'maintenance'):
             val = redis_client.get(f'kill_switch:{name}')
-            switches[name] = val == b'1'
+            switches[name] = val == '1'
 
         return self.render('admin/killswitch.html', switches=switches)
 
@@ -148,7 +148,7 @@ class KillSwitchView(BaseView):
             return redirect(url_for('.index'))
 
         current = redis_client.get(f'kill_switch:{switch_name}')
-        new_val = '0' if current == b'1' else '1'
+        new_val = '0' if current == '1' else '1'
         redis_client.set(f'kill_switch:{switch_name}', new_val)
 
         return redirect(url_for('.index'))

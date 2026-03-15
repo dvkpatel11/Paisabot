@@ -45,10 +45,10 @@ def hash_set(key: str, mapping: dict, ttl_seconds: int | None = None):
 def hash_get(key: str, field: str) -> str | None:
     """Get a single field from a Redis hash."""
     val = redis_client.hget(key, field)
-    return val.decode() if val else None
+    return val if val else None
 
 
 def hash_getall(key: str) -> dict:
     """Get all fields from a Redis hash."""
     raw = redis_client.hgetall(key)
-    return {k.decode(): v.decode() for k, v in raw.items()}
+    return dict(raw)

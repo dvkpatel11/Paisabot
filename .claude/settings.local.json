@@ -66,7 +66,16 @@
       "Bash(python3:*)",
       "Bash(python -c \"import numpy; print\\(f''numpy: {numpy.__version__}''\\); import arch; print\\(f''arch: {arch.__version__}''\\)\")",
       "Bash(pip show:*)",
-      "Bash(python -c \"import scipy; print\\(scipy.__version__\\)\")"
+      "Bash(python -c \"import scipy; print\\(scipy.__version__\\)\")",
+      "Bash(find C:UsersdeepvDesktopProjectsPaisabot.claudeworktreespedantic-cartwright -path */tests/*portfolio* -type f -name *.py)",
+      "Bash(grep -E \"\\\\.py$\")",
+      "Bash(find /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/pedantic-cartwright -path */test* -name *risk* -type f)",
+      "Bash(find /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/pedantic-cartwright -path */tests/test_factors* -type f)",
+      "Bash(ls -la /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/pedantic-cartwright/*.ini)",
+      "Bash(grep -i \"decode_responses\" /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/pedantic-cartwright/research/*.md)",
+      "Bash(find /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/pedantic-cartwright/tests -type f -name *.py)",
+      "Bash(grep -i \"redis key\" /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/pedantic-cartwright/research/*.md)",
+      "Bash(grep -i \"numpy\" /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/pedantic-cartwright/research/*.md)"
     ]
   }
 }
