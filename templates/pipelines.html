@@ -163,32 +163,30 @@ function triggerBackfill(sync) {
     });
 }
 
+// Data table columns — defined once, created on init
+var _dataStatusCols = [
+  {title: 'Symbol', field: 'symbol', width: 80},
+  {title: 'Bars', field: 'count', width: 70, hozAlign: 'right'},
+  {title: 'Earliest', field: 'earliest', formatter: PaisaTables.timeFormatter},
+  {title: 'Latest', field: 'latest', formatter: PaisaTables.timeFormatter},
+];
+
+function initDataTable() {
+  PaisaTables.create('data-status-table', _dataStatusCols, {maxHeight: 300});
+}
+
 function loadDataStatus() {
   fetch('/api/data/status').then(r => r.json()).then(data => {
     document.getElementById('data-status-label').textContent =
       data.bars_total_symbols + '/' + data.universe_count + ' symbols with data' +
       (data.factor_scores_latest ? ' | Factors: ' + PaisaUtils.formatTime(data.factor_scores_latest) : ' | No factors computed');
 
-    const cols = [
-      {title: 'Symbol', field: 'symbol', width: 80},
-      {title: 'Bars', field: 'count', width: 70, hozAlign: 'right'},
-      {title: 'Earliest', field: 'earliest', formatter: PaisaTables.timeFormatter},
-      {title: 'Latest', field: 'latest', formatter: PaisaTables.timeFormatter},
-    ];
-
     const rows = Object.entries(data.bars).map(([sym, info]) => ({
       symbol: sym, count: info.count,
       earliest: info.earliest, latest: info.latest,
     })).sort((a, b) => a.symbol.localeCompare(b.symbol));
 
-    if (!window._dataTableCreated) {
-      PaisaTables.create('data-status-table', cols, {maxHeight: 300});
-      window._dataTableCreated = true;
-    }
     PaisaTables.setData('data-status-table', rows);
-
-    // Log for debugging
-    console.log('[Paisabot] data/status:', data.bars_total_symbols, 'symbols,', rows.length, 'rows');
   });
 }
 
@@ -209,7 +207,13 @@ function triggerPipeline() {
       if (data.error) {
         status.textContent = 'Pipeline error: ' + data.error;
       } else if (data.reason) {
-        status.textContent = 'Pipeline stopped at ' + (data.stage || '?') + ': ' + data.reason;
+        var hints = {
+          'no_signals': 'No signals found. Run Compute Factors on the Factors page first, then retry.',
+          'no_price_data': 'No price data available. Run Backfill first to load historical bars.',
+          'no_orders': 'Signals generated (' + (data.n_signals||0) + ') but no rebalance orders needed (regime: ' + (data.regime||'?') + ').',
+          'all_blocked': (data.n_orders||0) + ' orders proposed but all blocked by risk gate (' + (data.n_blocked||0) + ' blocked).',
+        };
+        status.textContent = hints[data.reason] || ('Pipeline stopped at ' + (data.stage || '?') + ': ' + data.reason);
       } else {
         const parts = [];
         if (data.n_signals) parts.push(data.n_signals + ' signals');
@@ -262,17 +266,16 @@ function toggleWebSocket() {
   });
 }
 
-// Check WS status on load
 function checkWsStatus() {
   fetch('/api/data/websocket/status').then(r => r.json()).then(data => {
-    const btn = document.getElementById('btn-ws-toggle');
     if (data.running) {
-      btn.textContent = 'Stop WebSocket';
+      document.getElementById('btn-ws-toggle').textContent = 'Stop WebSocket';
     }
   }).catch(() => {});
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+  initDataTable();
   loadDataStatus();
   checkWsStatus();
 });
