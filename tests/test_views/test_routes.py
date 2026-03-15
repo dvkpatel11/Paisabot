@@ -30,8 +30,8 @@ class TestViewRoutes:
         resp = client.get('/execution')
         assert resp.status_code == 200
 
-    def test_analytics_renders(self, client):
-        resp = client.get('/analytics')
+    def test_portfolio_renders(self, client):
+        resp = client.get('/portfolio')
         assert resp.status_code == 200
 
     def test_alerts_renders(self, client):

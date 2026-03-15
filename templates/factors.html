@@ -2,8 +2,12 @@
 {% block title %}Factors - Paisabot{% endblock %}
 
 {% block content %}
-<div class="page-header">
+<div class="page-header" style="display:flex;align-items:center;justify-content:space-between">
   <h1>Factor & Signal Explorer</h1>
+  <div style="display:flex;gap:8px;align-items:center">
+    <button class="btn" id="btn-compute" onclick="triggerCompute()">Compute Factors</button>
+    <span class="text-muted" id="compute-status" style="font-size:12px"></span>
+  </div>
 </div>
 
 <!-- Signal Ranking -->
@@ -81,7 +85,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (symbols.length === 0) {
       document.getElementById('heatmap-chart').innerHTML =
         '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:14px">' +
-        'No factor scores yet. Run <a href="/pipelines" style="color:var(--accent)">Compute Factors</a> from the Pipelines page.' +
+        'No factor scores yet. Click <strong>Compute Factors</strong> above (requires bar data from Pipelines).' +
         '</div>';
       return;
     }
@@ -126,5 +130,33 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 });
+
+function triggerCompute() {
+  const btn = document.getElementById('btn-compute');
+  const status = document.getElementById('compute-status');
+  btn.disabled = true;
+  btn.textContent = 'Computing...';
+  status.textContent = 'Computing factors and signals...';
+
+  fetch('/api/data/compute', {method: 'POST', headers: {'Content-Type': 'application/json'}})
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        status.textContent = 'Error: ' + data.error;
+      } else if (data.task_id) {
+        status.textContent = 'Dispatched (task ' + data.task_id.slice(0, 8) + '...) — refresh in ~30s';
+      } else {
+        status.textContent = 'Complete — refreshing...';
+        setTimeout(() => location.reload(), 2000);
+      }
+      btn.disabled = false;
+      btn.textContent = 'Compute Factors';
+    })
+    .catch(() => {
+      status.textContent = 'Failed — check Celery worker is running';
+      btn.disabled = false;
+      btn.textContent = 'Compute Factors';
+    });
+}
 </script>
 {% endblock %}

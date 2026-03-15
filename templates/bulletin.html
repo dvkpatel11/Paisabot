@@ -96,61 +96,77 @@
     loadTrades();
   });
 
-  function checkSources() {
+function checkSources() {
+  fetch('/api/health').then(r => r.json()).then(data => {
+    const comps = data.components || {};
+    const details = data.details || {};
+
+    // Redis
+    const rOk = comps.redis === 'ok';
+    const rEl = document.getElementById('src-redis-status');
+    rEl.textContent = rOk ? 'OK' : 'DOWN';
+    rEl.style.color = rOk ? 'var(--green)' : 'var(--red)';
+    document.getElementById('src-redis-detail').textContent = details.redis || (rOk ? 'Connected' : 'Connection failed');
+
+    // DB
+    const dOk = comps.database === 'ok';
+    const dEl = document.getElementById('src-db-status');
+    dEl.textContent = dOk ? 'OK' : 'DOWN';
+    dEl.style.color = dOk ? 'var(--green)' : 'var(--red)';
+    document.getElementById('src-db-detail').textContent = details.database || (dOk ? 'Connected' : 'Connection failed');
+
     // Alpaca
-    fetch("/api/health")
-      .then((r) => r.json())
-      .then((data) => {
-        const alpaca = data.alpaca || {};
-        const el = document.getElementById("src-alpaca-status");
-        if (alpaca.connected) {
-          el.textContent = "OK";
-          el.style.color = "var(--green)";
-          document.getElementById("src-alpaca-detail").textContent = alpaca.account || "";
-        } else {
-          el.textContent = "N/A";
-          el.style.color = "var(--text-muted)";
-          document.getElementById("src-alpaca-detail").textContent = "No API key configured";
-        }
+    const aEl = document.getElementById('src-alpaca-status');
+    if (comps.alpaca === 'ok') {
+      aEl.textContent = 'OK';
+      aEl.style.color = 'var(--green)';
+      document.getElementById('src-alpaca-detail').textContent =
+        'Account: ' + (data.alpaca_account || 'connected');
+    } else if (comps.alpaca === 'error') {
+      aEl.textContent = 'ERR';
+      aEl.style.color = 'var(--red)';
+      document.getElementById('src-alpaca-detail').textContent =
+        details.alpaca || 'Key configured but connection failed';
+    } else {
+      aEl.textContent = 'N/A';
+      aEl.style.color = 'var(--text-muted)';
+      document.getElementById('src-alpaca-detail').textContent =
+        details.alpaca || 'No API key configured';
+    }
+  }).catch(err => {
+    ['src-alpaca-status', 'src-redis-status', 'src-db-status'].forEach(id => {
+      const el = document.getElementById(id);
+      el.textContent = 'ERR';
+      el.style.color = 'var(--red)';
+    });
+    document.getElementById('src-redis-detail').textContent = 'Health check failed: ' + err.message;
+  });
 
-        // Redis
-        const redis = data.redis || {};
-        const rEl = document.getElementById("src-redis-status");
-        rEl.textContent = redis.connected ? "OK" : "DOWN";
-        rEl.style.color = redis.connected ? "var(--green)" : "var(--red)";
+  // VIX + DB detail — from data status
+  fetch('/api/data/status').then(r => r.json()).then(data => {
+    // DB bar count — only override if health check showed OK
+    const dbDetail = document.getElementById('src-db-detail');
+    if (dbDetail.textContent === 'Connected') {
+      dbDetail.textContent =
+        data.bars_total_symbols + ' symbols, ' +
+        Object.values(data.bars || {}).reduce((s, b) => s + b.count, 0) + ' total bars';
+    }
 
-        // DB
-        const db = data.database || {};
-        const dEl = document.getElementById("src-db-status");
-        dEl.textContent = db.connected ? "OK" : "DOWN";
-        dEl.style.color = db.connected ? "var(--green)" : "var(--red)";
-        document.getElementById("src-db-detail").textContent = db.bar_count ? db.bar_count + " bars" : "";
-      })
-      .catch(() => {
-        ["src-alpaca-status", "src-redis-status", "src-db-status"].forEach((id) => {
-          document.getElementById(id).textContent = "?";
-        });
-      });
-
-    // VIX — just check data status
-    fetch("/api/data/status")
-      .then((r) => r.json())
-      .then((data) => {
-        const vEl = document.getElementById("src-vix-status");
-        const bars = data.bars || {};
-        if (bars["VIX"] || bars["^VIX"]) {
-          vEl.textContent = "OK";
-          vEl.style.color = "var(--green)";
-          const vix = bars["VIX"] || bars["^VIX"];
-          document.getElementById("src-vix-detail").textContent =
-            vix.count + " bars, latest " + (vix.latest || "").slice(0, 10);
-        } else {
-          vEl.textContent = "N/A";
-          vEl.style.color = "var(--text-muted)";
-          document.getElementById("src-vix-detail").textContent = "No VIX data loaded";
-        }
-      });
-  }
+    // VIX
+    const vEl = document.getElementById('src-vix-status');
+    const bars = data.bars || {};
+    const vix = bars['VIX'] || bars['^VIX'] || bars['VIXY'];
+    if (vix) {
+      vEl.textContent = 'OK';
+      vEl.style.color = 'var(--green)';
+      document.getElementById('src-vix-detail').textContent = vix.count + ' bars, latest ' + (vix.latest || '').slice(0, 10);
+    } else {
+      vEl.textContent = 'N/A';
+      vEl.style.color = 'var(--text-muted)';
+      document.getElementById('src-vix-detail').textContent = 'No VIX data loaded — run Backfill from Pipelines';
+    }
+  }).catch(() => {});
+}
 
   function loadPrices() {
     fetch("/api/data/status")
@@ -177,16 +193,14 @@
       });
   }
 
-  function loadFactors() {
-    fetch("/api/scores")
-      .then((r) => r.json())
-      .then((scores) => {
-        const symbols = Object.keys(scores).sort();
-        if (symbols.length === 0) {
-          document.getElementById("factor-table").innerHTML =
-            '<div style="padding:20px;color:var(--text-muted);font-size:13px">No factor scores computed yet. Use Pipelines > Compute Factors.</div>';
-          return;
-        }
+function loadFactors() {
+  fetch('/api/scores').then(r => r.json()).then(scores => {
+    const symbols = Object.keys(scores).sort();
+    if (symbols.length === 0) {
+      document.getElementById('factor-table').innerHTML =
+        '<div style="padding:20px;color:var(--text-muted);font-size:13px">No factor scores computed yet. Use <a href="/factors" style="color:var(--accent)">Factors</a> > Compute Factors.</div>';
+      return;
+    }
 
         const factors = [
           "trend",

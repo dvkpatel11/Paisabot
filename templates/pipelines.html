@@ -17,7 +17,6 @@
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <button class="btn" id="btn-backfill" onclick="triggerBackfill(false)">Run Backfill (Celery)</button>
       <button class="btn" id="btn-backfill-sync" onclick="triggerBackfill(true)">Run Backfill (Sync)</button>
-      <button class="btn" id="btn-compute" onclick="triggerCompute()">Compute Factors</button>
       <span class="text-muted" id="data-action-status" style="font-size:12px"></span>
     </div>
   </div>
@@ -159,28 +158,6 @@ function triggerBackfill(sync) {
       status.textContent = sync ? 'Backfill failed — check Alpaca keys in .env' : 'Backfill failed — check Celery worker is running';
       btn.disabled = false;
       btn.textContent = origText;
-    });
-}
-
-function triggerCompute() {
-  const btn = document.getElementById('btn-compute');
-  const status = document.getElementById('data-action-status');
-  btn.disabled = true;
-  btn.textContent = 'Computing...';
-  status.textContent = 'Computing factors and signals...';
-
-  fetch('/api/data/compute', {method: 'POST', headers: {'Content-Type': 'application/json'}})
-    .then(r => r.json())
-    .then(data => {
-      status.textContent = 'Factor computation dispatched (task ' + data.task_id.slice(0, 8) + '...)';
-      btn.disabled = false;
-      btn.textContent = 'Compute Factors';
-      setTimeout(loadDataStatus, 10000);
-    })
-    .catch(() => {
-      status.textContent = 'Compute failed — check Celery worker is running';
-      btn.disabled = false;
-      btn.textContent = 'Compute Factors';
     });
 }
 

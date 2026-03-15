@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (regime === 'unknown') {
       document.getElementById('rotation-confidence').textContent =
-        'No regime data — run Compute Factors from Pipelines';
+        'No regime data — run Compute Factors from the Factors page';
     } else {
       document.getElementById('rotation-confidence').textContent =
         'confidence ' + ((data.confidence || 0) * 100).toFixed(0) + '%';
@@ -76,7 +76,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (allSignals.length === 0) {
       document.getElementById('sector-chart').innerHTML =
         '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:14px">' +
-        'No signals yet. Run <a href="/pipelines" style="color:var(--accent)">Compute Factors</a> from the Pipelines page.' +
+        'No signals yet. Run <a href="/factors" style="color:var(--accent)">Compute Factors</a> from the Factors page.' +
         '</div>';
       return;
     }
