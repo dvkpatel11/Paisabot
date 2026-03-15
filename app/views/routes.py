@@ -43,6 +43,16 @@ def pipelines():
     return render_template('pipelines.html')
 
 
+@views_bp.route('/backtest')
+def backtest():
+    return render_template('backtest.html')
+
+
+@views_bp.route('/bulletin')
+def bulletin():
+    return render_template('bulletin.html')
+
+
 @views_bp.route('/config')
 def config():
     return render_template('config.html')

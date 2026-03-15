@@ -1,6 +1,7 @@
 import os
 
 from celery import Celery
+from celery.schedules import crontab
 
 
 def make_celery(app=None):
@@ -24,6 +25,20 @@ def make_celery(app=None):
             'app.execution.*': {'queue': 'execution'},
             'app.data.*': {'queue': 'market_data'},
             'app.factors.sentiment.*': {'queue': 'sentiment'},
+        },
+        'beat_schedule': {
+            'refresh-bars-daily': {
+                'task': 'app.data.refresh_all_bars',
+                'schedule': crontab(hour=17, minute=0),
+            },
+            'refresh-vix-daily': {
+                'task': 'app.data.refresh_vix',
+                'schedule': crontab(hour=17, minute=30),
+            },
+            'compute-factors-daily': {
+                'task': 'app.data.compute_all_factors',
+                'schedule': crontab(hour=18, minute=0),
+            },
         },
     })
     return celery

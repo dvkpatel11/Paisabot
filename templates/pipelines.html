@@ -7,6 +7,22 @@
   <span class="text-muted" id="pipeline-last-update" style="font-family:var(--font-mono);font-size:12px">Last update: --</span>
 </div>
 
+<!-- Data Management -->
+<div class="panel panel-full" style="margin-bottom:16px">
+  <div class="panel-header">
+    <h2>Data Management</h2>
+    <span class="text-muted" style="font-size:12px" id="data-status-label"></span>
+  </div>
+  <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;padding:0 0 12px 0">
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn" id="btn-backfill" onclick="triggerBackfill()">Run Backfill</button>
+      <button class="btn" id="btn-compute" onclick="triggerCompute()">Compute Factors</button>
+      <span class="text-muted" id="data-action-status" style="font-size:12px"></span>
+    </div>
+  </div>
+  <div id="data-status-table"></div>
+</div>
+
 <!-- Pipeline Flow -->
 <div class="panel panel-full" style="margin-bottom:16px">
   <div class="panel-header">
@@ -105,4 +121,77 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/pipelines.js') }}"></script>
+<script>
+function triggerBackfill() {
+  const btn = document.getElementById('btn-backfill');
+  const status = document.getElementById('data-action-status');
+  btn.disabled = true;
+  btn.textContent = 'Running...';
+  status.textContent = 'Dispatching backfill tasks...';
+
+  fetch('/api/data/backfill', {method: 'POST', headers: {'Content-Type': 'application/json'}})
+    .then(r => r.json())
+    .then(data => {
+      status.textContent = 'Backfill dispatched for ' + data.count + ' symbols (' + data.days + ' days)';
+      btn.disabled = false;
+      btn.textContent = 'Run Backfill';
+      setTimeout(loadDataStatus, 5000);
+    })
+    .catch(() => {
+      status.textContent = 'Backfill failed — check Celery worker is running';
+      btn.disabled = false;
+      btn.textContent = 'Run Backfill';
+    });
+}
+
+function triggerCompute() {
+  const btn = document.getElementById('btn-compute');
+  const status = document.getElementById('data-action-status');
+  btn.disabled = true;
+  btn.textContent = 'Computing...';
+  status.textContent = 'Computing factors and signals...';
+
+  fetch('/api/data/compute', {method: 'POST', headers: {'Content-Type': 'application/json'}})
+    .then(r => r.json())
+    .then(data => {
+      status.textContent = 'Factor computation dispatched (task ' + data.task_id.slice(0, 8) + '...)';
+      btn.disabled = false;
+      btn.textContent = 'Compute Factors';
+      setTimeout(loadDataStatus, 10000);
+    })
+    .catch(() => {
+      status.textContent = 'Compute failed — check Celery worker is running';
+      btn.disabled = false;
+      btn.textContent = 'Compute Factors';
+    });
+}
+
+function loadDataStatus() {
+  fetch('/api/data/status').then(r => r.json()).then(data => {
+    document.getElementById('data-status-label').textContent =
+      data.bars_total_symbols + '/' + data.universe_count + ' symbols with data' +
+      (data.factor_scores_latest ? ' | Factors: ' + PaisaUtils.formatTime(data.factor_scores_latest) : ' | No factors computed');
+
+    const cols = [
+      {title: 'Symbol', field: 'symbol', width: 80},
+      {title: 'Bars', field: 'count', width: 70, hozAlign: 'right'},
+      {title: 'Earliest', field: 'earliest', formatter: PaisaTables.timeFormatter},
+      {title: 'Latest', field: 'latest', formatter: PaisaTables.timeFormatter},
+    ];
+
+    const rows = Object.entries(data.bars).map(([sym, info]) => ({
+      symbol: sym, count: info.count,
+      earliest: info.earliest, latest: info.latest,
+    })).sort((a, b) => a.symbol.localeCompare(b.symbol));
+
+    if (!window._dataTableCreated) {
+      PaisaTables.create('data-status-table', cols);
+      window._dataTableCreated = true;
+    }
+    PaisaTables.setData('data-status-table', rows);
+  });
+}
+
+document.addEventListener('DOMContentLoaded', loadDataStatus);
+</script>
 {% endblock %}

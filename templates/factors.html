@@ -62,19 +62,29 @@ document.addEventListener('DOMContentLoaded', function() {
     PaisaTables.setData('avoid-signals', data.avoid || []);
   });
 
+  // Populate symbol dropdown from universe (always has data)
+  fetch('/api/universe').then(r => r.json()).then(etfs => {
+    const select = document.getElementById('factor-symbol-select');
+    etfs.forEach(e => {
+      const opt = document.createElement('option');
+      opt.value = e.symbol;
+      opt.textContent = e.symbol + ' — ' + e.name;
+      select.appendChild(opt);
+    });
+  });
+
   // Load scores for heatmap
   fetch('/api/scores').then(r => r.json()).then(scores => {
     const symbols = Object.keys(scores).sort();
     const factors = ['trend', 'volatility', 'sentiment', 'breadth', 'dispersion', 'correlation', 'liquidity', 'slippage'];
 
-    // Populate symbol selector
-    const select = document.getElementById('factor-symbol-select');
-    symbols.forEach(s => {
-      const opt = document.createElement('option');
-      opt.value = s;
-      opt.textContent = s;
-      select.appendChild(opt);
-    });
+    if (symbols.length === 0) {
+      document.getElementById('heatmap-chart').innerHTML =
+        '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:14px">' +
+        'No factor scores yet. Run <a href="/pipelines" style="color:var(--accent)">Compute Factors</a> from the Pipelines page.' +
+        '</div>';
+      return;
+    }
 
     // Build heatmap
     const z = factors.map(f => symbols.map(s => scores[s] ? scores[s][f] || 0 : 0));

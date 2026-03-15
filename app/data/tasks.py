@@ -110,6 +110,84 @@ def refresh_vix(self):
             raise self.retry(exc=exc)
 
 
+@celery.task(name='app.data.refresh_all_bars', bind=True, max_retries=1)
+def refresh_all_bars(self):
+    """Refresh daily bars for all active ETFs in the universe."""
+    from app import create_app
+    app = create_app()
+    with app.app_context():
+        from app.models.etf_universe import ETFUniverse
+
+        try:
+            etfs = ETFUniverse.query.filter_by(is_active=True).all()
+            symbols = [e.symbol for e in etfs]
+            logger.info('refresh_all_bars_start', count=len(symbols))
+
+            for symbol in symbols:
+                refresh_daily_bars.delay(symbol)
+
+            return {'dispatched': len(symbols)}
+        except Exception as exc:
+            logger.error('refresh_all_bars_failed', error=str(exc))
+            raise self.retry(exc=exc)
+
+
+@celery.task(name='app.data.compute_all_factors', bind=True, max_retries=1)
+def compute_all_factors(self):
+    """Compute factor scores and generate signals for all active ETFs."""
+    from app import create_app
+    app = create_app()
+    with app.app_context():
+        from app.extensions import db as _db, redis_client
+        from app.factors.factor_registry import FactorRegistry
+        from app.signals.signal_generator import SignalGenerator
+        from app.models.etf_universe import ETFUniverse
+        import json
+
+        try:
+            etfs = ETFUniverse.query.filter_by(is_active=True).all()
+            symbols = [e.symbol for e in etfs]
+            logger.info('compute_all_factors_start', count=len(symbols))
+
+            # Compute factors
+            registry = FactorRegistry(
+                redis_client=redis_client,
+                db_session=_db.session,
+            )
+            scores = registry.compute_all(symbols)
+
+            # Cache latest scores for API
+            redis_client.set(
+                'cache:scores:latest',
+                json.dumps({
+                    sym: {k: round(v, 4) for k, v in factors.items()}
+                    for sym, factors in scores.items()
+                }),
+                ex=3600,
+            )
+
+            # Generate signals
+            generator = SignalGenerator(
+                redis_client=redis_client,
+                db_session=_db.session,
+            )
+            signals = generator.run(symbols)
+
+            logger.info(
+                'compute_all_factors_complete',
+                symbols=len(symbols),
+                signals=len(signals) if signals else 0,
+            )
+            return {
+                'symbols': len(symbols),
+                'signals': len(signals) if signals else 0,
+            }
+
+        except Exception as exc:
+            logger.error('compute_all_factors_failed', error=str(exc))
+            raise self.retry(exc=exc)
+
+
 @celery.task(name='app.data.refresh_universe_metadata')
 def refresh_universe_metadata():
     """Refresh universe metadata (AUM, ADV) from market data."""
