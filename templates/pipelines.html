@@ -14,8 +14,9 @@
     <span class="text-muted" style="font-size:12px" id="data-status-label"></span>
   </div>
   <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;padding:0 0 12px 0">
-    <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn" id="btn-backfill" onclick="triggerBackfill()">Run Backfill</button>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn" id="btn-backfill" onclick="triggerBackfill(false)">Run Backfill (Celery)</button>
+      <button class="btn" id="btn-backfill-sync" onclick="triggerBackfill(true)">Run Backfill (Sync)</button>
       <button class="btn" id="btn-compute" onclick="triggerCompute()">Compute Factors</button>
       <span class="text-muted" id="data-action-status" style="font-size:12px"></span>
     </div>
@@ -122,25 +123,42 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/pipelines.js') }}"></script>
 <script>
-function triggerBackfill() {
-  const btn = document.getElementById('btn-backfill');
+function triggerBackfill(sync) {
+  const btnId = sync ? 'btn-backfill-sync' : 'btn-backfill';
+  const btn = document.getElementById(btnId);
   const status = document.getElementById('data-action-status');
   btn.disabled = true;
-  btn.textContent = 'Running...';
-  status.textContent = 'Dispatching backfill tasks...';
+  const origText = btn.textContent;
+  btn.textContent = sync ? 'Loading data...' : 'Dispatching...';
+  status.textContent = sync ? 'Fetching bars from Alpaca (this may take a minute)...' : 'Dispatching backfill tasks...';
 
-  fetch('/api/data/backfill', {method: 'POST', headers: {'Content-Type': 'application/json'}})
+  fetch('/api/data/backfill', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sync: !!sync}),
+  })
     .then(r => r.json())
     .then(data => {
-      status.textContent = 'Backfill dispatched for ' + data.count + ' symbols (' + data.days + ' days)';
+      if (data.error) {
+        status.textContent = 'Error: ' + data.error;
+      } else if (data.mode === 'sync') {
+        const ok = (data.results || []).filter(r => r.status === 'ok').length;
+        const total = (data.results || []).reduce((s, r) => s + (r.inserted || 0), 0);
+        status.textContent = 'Backfill complete: ' + ok + '/' + data.count + ' symbols, ' + total + ' bars inserted';
+        if (data.errors && data.errors.length > 0) {
+          status.textContent += ' (' + data.errors.length + ' errors)';
+        }
+      } else {
+        status.textContent = 'Backfill dispatched for ' + data.count + ' symbols (' + data.days + ' days)';
+      }
       btn.disabled = false;
-      btn.textContent = 'Run Backfill';
-      setTimeout(loadDataStatus, 5000);
+      btn.textContent = origText;
+      loadDataStatus();
     })
     .catch(() => {
-      status.textContent = 'Backfill failed — check Celery worker is running';
+      status.textContent = sync ? 'Backfill failed — check Alpaca keys in .env' : 'Backfill failed — check Celery worker is running';
       btn.disabled = false;
-      btn.textContent = 'Run Backfill';
+      btn.textContent = origText;
     });
 }
 
