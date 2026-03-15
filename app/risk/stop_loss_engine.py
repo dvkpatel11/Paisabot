@@ -117,6 +117,7 @@ class StopLossEngine:
         self,
         positions: list[dict],
         current_prices: dict[str, float],
+        db_session=None,
     ) -> dict:
         """Scan all open positions for stop-loss breaches.
 
@@ -124,6 +125,9 @@ class StopLossEngine:
             positions: list of position dicts with keys:
                 symbol, entry_price, high_watermark, is_open (or status='open')
             current_prices: {symbol: current_price}
+            db_session: optional SQLAlchemy session; when provided, HWM values
+                are re-fetched from DB to avoid stale-read race conditions with
+                concurrent mark-to-market updates.
 
         Returns:
             dict with keys: exits (list), reductions (list), ok_count (int)
@@ -131,6 +135,24 @@ class StopLossEngine:
         exits = []
         reductions = []
         ok_count = 0
+
+        # Bulk-fetch fresh HWM values from DB to avoid stale reads.
+        # mark_to_market() may have updated HWM between the time positions
+        # were loaded and now; using a stale HWM could mis-fire the trailing stop.
+        fresh_hwm: dict[str, float] = {}
+        if db_session is not None:
+            try:
+                from app.models.positions import Position
+                rows = db_session.query(
+                    Position.symbol, Position.high_watermark,
+                ).filter_by(status='open').all()
+                fresh_hwm = {
+                    row.symbol: float(row.high_watermark)
+                    for row in rows
+                    if row.high_watermark is not None
+                }
+            except Exception as exc:
+                self._log.warning('hwm_db_refresh_failed', error=str(exc))
 
         for pos in positions:
             is_open = pos.get('is_open', pos.get('status') == 'open')
@@ -142,11 +164,17 @@ class StopLossEngine:
             if current is None:
                 continue
 
+            # Prefer DB-fresh HWM; fall back to the value in the passed dict.
+            hwm = fresh_hwm.get(
+                symbol,
+                float(pos.get('high_watermark', pos['entry_price'])),
+            )
+
             result = self.check_position(
                 symbol=symbol,
                 entry_price=float(pos['entry_price']),
                 current_price=current,
-                high_watermark=float(pos.get('high_watermark', pos['entry_price'])),
+                high_watermark=hwm,
             )
 
             if result['action'] == 'exit':

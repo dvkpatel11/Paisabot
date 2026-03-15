@@ -11,7 +11,44 @@ from config import config_map
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+_REQUIRED_PROD_VARS = [
+    'SECRET_KEY',
+    'DATABASE_URL',
+    'REDIS_URL',
+    'FERNET_KEY',
+    'ADMIN_PASSWORD',
+    'ALPACA_API_KEY',
+    'ALPACA_SECRET_KEY',
+]
+
+_INSECURE_DEFAULTS = {
+    'SECRET_KEY': 'dev-secret-change-me',
+    'DATABASE_URL': 'postgresql://paisabot:paisabot@localhost:5432/paisabot',
+}
+
+
+def _validate_env(config_name: str) -> None:
+    """Raise on missing/default secrets when running in production."""
+    import os
+    if config_name != 'production':
+        return
+    missing = [v for v in _REQUIRED_PROD_VARS if not os.environ.get(v)]
+    if missing:
+        raise RuntimeError(
+            f'Production startup blocked — missing required env vars: {missing}\n'
+            'Set them in your .env or systemd/Docker environment before starting.'
+        )
+    for var, bad_default in _INSECURE_DEFAULTS.items():
+        if os.environ.get(var) == bad_default:
+            raise RuntimeError(
+                f'Production startup blocked — {var} is still the insecure default value. '
+                'Change it before deploying.'
+            )
+
+
 def create_app(config_name: str = 'development') -> Flask:
+    _validate_env(config_name)
+
     app = Flask(
         __name__,
         static_folder=os.path.join(_ROOT, 'static'),
@@ -22,11 +59,14 @@ def create_app(config_name: str = 'development') -> Flask:
     # Init extensions
     from app.extensions import db, socketio
     db.init_app(app)
+    # Restrict WebSocket connections to explicitly configured origins.
+    # '*' would allow any website to subscribe to real-time trading data.
+    cors_origins = app.config.get('CORS_ALLOWED_ORIGINS', ['http://localhost:5000'])
     socketio.init_app(
         app,
         message_queue=app.config['REDIS_URL'],
         async_mode='eventlet',
-        cors_allowed_origins='*',
+        cors_allowed_origins=cors_origins,
     )
 
     # Redis

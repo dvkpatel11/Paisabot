@@ -72,7 +72,7 @@ class PortfolioConstructor:
             return self._equal_weight(available, constraints)
 
         if obj == 'hrp':
-            return self._hrp_weights(available, prices_subset, constraints)
+            return self._hrp_weights(available, prices_subset, constraints, sector_map)
 
         # max_sharpe or min_vol via EfficientFrontier
         return self._efficient_frontier(
@@ -141,6 +141,7 @@ class PortfolioConstructor:
         candidates: list[str],
         prices_subset: pd.DataFrame,
         constraints: PortfolioConstraints,
+        sector_map: dict[str, str] | None = None,
     ) -> dict[str, float]:
         from pypfopt import HRPOpt
 
@@ -154,13 +155,37 @@ class PortfolioConstructor:
             hrp = HRPOpt(returns)
             raw = hrp.optimize()
 
+            # Step 1: cap individual positions
             result = {}
             for sym, w in raw.items():
                 scaled = w * investable
                 if scaled > constraints.max_position_size:
                     scaled = constraints.max_position_size
                 if scaled > 0.001:
-                    result[sym] = round(scaled, 6)
+                    result[sym] = scaled
+
+            # Step 2: enforce sector limits and trim breaching symbols
+            if sector_map and constraints.max_sector_exposure:
+                sector_totals: dict[str, float] = {}
+                for sym, w in result.items():
+                    sec = sector_map.get(sym, 'Unknown')
+                    sector_totals[sec] = sector_totals.get(sec, 0.0) + w
+
+                for sec, total in sector_totals.items():
+                    if total > constraints.max_sector_exposure:
+                        # Scale all symbols in this sector proportionally
+                        scale = constraints.max_sector_exposure / total
+                        for sym in list(result):
+                            if sector_map.get(sym, 'Unknown') == sec:
+                                result[sym] *= scale
+
+            # Step 3: re-normalize so weights sum to investable fraction
+            total = sum(result.values())
+            if total > 0:
+                result = {
+                    sym: round(w / total * investable, 6)
+                    for sym, w in result.items()
+                }
 
             return result
 

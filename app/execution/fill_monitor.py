@@ -84,6 +84,22 @@ class FillMonitor:
                 self._broker.cancel_order(order_id)
                 # Fetch final status after cancellation
                 order = self._broker.get_order(order_id)
+                # Detect partial fill: broker may have filled some shares before
+                # the cancel was processed. Log critical so position drift is visible.
+                filled_qty = order.filled_qty or 0
+                if filled_qty > 0 and order.status in ('cancelled', 'expired'):
+                    self._log.critical(
+                        'partial_fill_on_cancel',
+                        order_id=order_id,
+                        symbol=order.symbol,
+                        filled_qty=filled_qty,
+                        requested_qty=order.qty,
+                        status=order.status,
+                        message=(
+                            'Broker holds a partial position that internal tracking '
+                            'will mark as cancelled. Reconcile immediately.'
+                        ),
+                    )
                 return order
 
             time.sleep(self._poll_interval)

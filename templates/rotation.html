@@ -7,12 +7,12 @@
 </div>
 
 <div class="grid grid-2">
-  <!-- Regime Status -->
-  <div class="panel">
+  <!-- Regime Status — driven by Alpine store 'rotation' -->
+  <div class="panel" x-data>
     <div class="panel-header"><h2>Current Regime</h2></div>
     <div class="regime-display">
-      <span class="badge badge-lg" id="rotation-regime">--</span>
-      <div class="panel-sub" id="rotation-confidence">confidence --</div>
+      <span class="badge badge-lg" :class="'badge-' + $store.rotation.regimeColor" x-text="$store.rotation.regimeName">--</span>
+      <div class="panel-sub" x-text="$store.rotation.regimeConfidence">confidence --</div>
     </div>
   </div>
 
@@ -38,22 +38,36 @@
 
 {% block scripts %}
 <script>
+// ── Alpine store for regime panel ───────────────────────────────────
+document.addEventListener('alpine:init', () => {
+  Alpine.store('rotation', {
+    regimeName:       '--',
+    regimeColor:      '',
+    regimeConfidence: 'confidence --',
+  });
+
+  PaisaSocket.on('regime_change', function(data) {
+    const s      = Alpine.store('rotation');
+    const regime = data.to_regime || data.regime || 'unknown';
+    s.regimeName       = regime;
+    s.regimeColor      = PaisaUtils.regimeColor(regime);
+    s.regimeConfidence = 'confidence ' + ((data.confidence || 0) * 100).toFixed(0) + '%';
+  });
+});
+
+// ── Charts (Plotly) — no Alpine dependency ──────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
   fetch('/api/regime').then(r => r.json()).then(data => {
-    const badge = document.getElementById('rotation-regime');
+    // Update Alpine store
+    const s      = Alpine.store('rotation');
     const regime = data.regime || 'unknown';
-    badge.textContent = regime;
-    badge.className = 'badge badge-lg badge-' + PaisaUtils.regimeColor(regime);
+    s.regimeName  = regime;
+    s.regimeColor = PaisaUtils.regimeColor(regime);
+    s.regimeConfidence = regime === 'unknown'
+      ? 'No regime data — run Compute Factors from the Factors page'
+      : 'confidence ' + ((data.confidence || 0) * 100).toFixed(0) + '%';
 
-    if (regime === 'unknown') {
-      document.getElementById('rotation-confidence').textContent =
-        'No regime data — run Compute Factors from the Factors page';
-    } else {
-      document.getElementById('rotation-confidence').textContent =
-        'confidence ' + ((data.confidence || 0) * 100).toFixed(0) + '%';
-    }
-
-    // Regime timeline
+    // Regime timeline chart
     if (data.history && data.history.length > 0) {
       const colors = data.history.map(h => PaisaUtils.regimeHex(h.regime));
       PaisaCharts.bar('regime-timeline', {
@@ -68,7 +82,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
-  // Sector scores from signals
+  // Sector rankings chart from signals
   fetch('/api/signals').then(r => r.json()).then(data => {
     const allSignals = [...(data.long || []), ...(data.neutral || []), ...(data.avoid || [])];
     allSignals.sort((a, b) => b.composite_score - a.composite_score);
@@ -86,12 +100,6 @@ document.addEventListener('DOMContentLoaded', function() {
       values: allSignals.map(s => s.composite_score),
       title: 'Composite Score Ranking',
     });
-  });
-
-  PaisaSocket.on('regime_change', function(data) {
-    const badge = document.getElementById('rotation-regime');
-    badge.textContent = data.to_regime || data.regime;
-    badge.className = 'badge badge-lg badge-' + PaisaUtils.regimeColor(data.to_regime || data.regime);
   });
 });
 </script>

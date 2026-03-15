@@ -109,9 +109,11 @@ class SignalFilter:
         """Check if factor data is too old to be reliable.
 
         Factor scores should be refreshed within the last hour.
+        Returns True (stale → block signal) on any Redis error so the filter
+        fails safe rather than allowing signals through on infrastructure faults.
         """
         if self._redis is None:
-            return False
+            return True  # no Redis = can't verify freshness → block
 
         try:
             ttl = self._redis.ttl(f'scores:{symbol}')
@@ -120,4 +122,4 @@ class SignalFilter:
                 return True
             return False
         except Exception:
-            return False
+            return True  # fail-safe: treat as stale on Redis error

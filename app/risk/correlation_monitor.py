@@ -127,13 +127,28 @@ class CorrelationMonitor:
         return self._result(avg_corr, status, breach_days, pairs_above)
 
     # ── breach counter ──────────────────────────────────────────────
+    # Counter tracks calendar days in breach, not invocation count.
+    # A date-stamped sentinel key (risk:corr_breach_date:<YYYY-MM-DD>)
+    # ensures the counter increments at most once per UTC trading day,
+    # regardless of how many times the monitor runs intraday.
+
+    def _today_key(self) -> str:
+        """Return a date-stamped key for today's breach record."""
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        return f'risk:corr_breach_date:{today}'
 
     def _increment_breach_counter(self) -> int:
         if self._redis is None:
             return 1
-        val = self._redis.incr(self.CONSECUTIVE_DAYS_KEY)
-        self._redis.expire(self.CONSECUTIVE_DAYS_KEY, 86400 * 7)
-        return int(val)
+        today_key = self._today_key()
+        # Only increment the running count if today hasn't been recorded yet.
+        if not self._redis.exists(today_key):
+            self._redis.set(today_key, '1', ex=86400 * 8)  # sentinel expires in 8 days
+            self._redis.incr(self.CONSECUTIVE_DAYS_KEY)
+            self._redis.expire(self.CONSECUTIVE_DAYS_KEY, 86400 * 7)
+        val = self._redis.get(self.CONSECUTIVE_DAYS_KEY)
+        return int(val) if val else 1
 
     def _decrement_breach_counter(self) -> int:
         """Decrement breach counter by 1 (min 0) instead of hard-resetting."""

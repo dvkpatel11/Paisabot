@@ -22,7 +22,12 @@ def _is_market_hours() -> bool:
     return market_open <= now_et <= market_close
 
 
-@celery.task(name='app.risk.run_continuous_monitor', bind=True, max_retries=0)
+@celery.task(
+    name='app.risk.run_continuous_monitor',
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,  # seconds between retries on transient errors
+)
 def run_continuous_monitor(self):
     """Run all continuous risk monitors.
 
@@ -104,8 +109,12 @@ def run_continuous_monitor(self):
                 except (ValueError, TypeError):
                     pass
 
-            closed = Position.query.filter_by(status='closed').all()
-            realized = sum(float(p.realized_pnl or 0) for p in closed)
+            # Aggregate in SQL — avoid loading entire position history into memory
+            from sqlalchemy import text as _text
+            realized_row = _db.session.execute(
+                _text("SELECT COALESCE(SUM(realized_pnl), 0) FROM positions WHERE status = 'closed'")
+            ).fetchone()
+            realized = float(realized_row[0]) if realized_row else 0.0
             unrealized = sum(float(p.unrealized_pnl or 0) for p in positions)
             portfolio_value = initial_capital + realized + unrealized
 
@@ -166,6 +175,7 @@ def run_continuous_monitor(self):
                 prices_df=prices_df,
                 portfolio_value=portfolio_value,
                 current_advs=current_advs if current_advs else None,
+                db_session=_db.session,
             )
 
             overall = results.get('overall_status', 'ok')
@@ -247,4 +257,4 @@ def run_continuous_monitor(self):
 
         except Exception as exc:
             logger.error('continuous_monitor_failed', error=str(exc))
-            return {'error': str(exc)}
+            raise self.retry(exc=exc)

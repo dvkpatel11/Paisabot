@@ -48,6 +48,7 @@ class ContinuousMonitor:
         prices_df: pd.DataFrame,
         portfolio_value: float = 100_000.0,
         current_advs: dict[str, float] | None = None,
+        db_session=None,
     ) -> dict:
         """Run all continuous monitors and return aggregated results.
 
@@ -71,7 +72,7 @@ class ContinuousMonitor:
 
         # 2. Stop-loss scan
         results['stop_loss'] = self.stop_loss.scan_all_positions(
-            positions, current_prices,
+            positions, current_prices, db_session=db_session,
         )
 
         # 3. VaR computation

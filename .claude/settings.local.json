@@ -79,7 +79,10 @@
       "Bash(alembic upgrade:*)",
       "Bash(ls \"C:\\\\Users\\\\deepv\\\\Desktop\\\\Projects\\\\Paisabot\\\\.claude\\\\worktrees\\\\pedantic-cartwright\\\\migrations\\\\versions\\\\4ac29fbec118\"*)",
       "Bash(python3 -c \":*)",
-      "Bash(node -e \"require\\(''fs''\\).readFileSync\\(''static/js/config.js'',''utf8''\\); console.log\\(''config.js OK''\\)\")"
+      "Bash(node -e \"require\\(''fs''\\).readFileSync\\(''static/js/config.js'',''utf8''\\); console.log\\(''config.js OK''\\)\")",
+      "Bash(find \"C:\\\\Users\\\\deepv\\\\Desktop\\\\Projects\\\\Paisabot\\\\.claude\\\\worktrees\\\\kind-ptolemy/tests\" -name \"*.py\" -exec grep -l \"def test_\" {})",
+      "Bash(wc -l templates/*.html static/js/*.js static/css/main.css)",
+      "Bash(grep -n \"PaisaSocket.on\\\\|PaisaCharts\\\\.\" templates/*.html)"
     ]
   }
 }

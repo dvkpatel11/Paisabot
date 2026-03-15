@@ -26,6 +26,19 @@ def make_celery(app=None):
             'app.data.*': {'queue': 'market_data'},
             'app.factors.sentiment.*': {'queue': 'sentiment'},
         },
+        # Per-task overrides for long-running EOD jobs that exceed the default 5-min limit.
+        # EOD factor computation (20+ ETFs + FinBERT) needs up to ~20 min.
+        # Pipeline orchestration needs up to ~15 min.
+        'task_annotations': {
+            'app.data.compute_all_factors': {
+                'soft_time_limit': 1200,
+                'time_limit': 1320,
+            },
+            'app.pipeline.run_trading_pipeline': {
+                'soft_time_limit': 900,
+                'time_limit': 960,
+            },
+        },
         'beat_schedule': {
             'refresh-bars-daily': {
                 'task': 'app.data.refresh_all_bars',

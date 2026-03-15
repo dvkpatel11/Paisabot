@@ -80,6 +80,7 @@ class RiskManager:
         prices_df: pd.DataFrame,
         portfolio_value: float = 100_000.0,
         current_advs: dict[str, float] | None = None,
+        db_session=None,
     ) -> dict:
         """Run all continuous risk monitors.
 
@@ -93,6 +94,7 @@ class RiskManager:
             prices_df=prices_df,
             portfolio_value=portfolio_value,
             current_advs=current_advs,
+            db_session=db_session,
         )
 
     # ── convenience methods ─────────────────────────────────────────
