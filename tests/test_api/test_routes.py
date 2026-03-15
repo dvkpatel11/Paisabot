@@ -272,3 +272,86 @@ class TestBacktestEndpoint:
         data = resp.get_json()
         assert 'dates' in data
         assert 'portfolio_value' in data
+
+
+# ── pipelines ─────────────────────────────────────────────────────
+
+class TestPipelineStatusEndpoint:
+    def test_pipeline_status_returns_modules(self, client):
+        resp = client.get('/api/pipelines/status')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert 'modules' in data
+        assert len(data['modules']) == 7
+
+    def test_pipeline_status_module_structure(self, client):
+        resp = client.get('/api/pipelines/status')
+        data = resp.get_json()
+        mod = data['modules'][0]
+        assert 'id' in mod
+        assert 'name' in mod
+        assert 'index' in mod
+        assert 'status' in mod
+        assert 'items_processed' in mod
+
+    def test_pipeline_status_has_kill_switches(self, client):
+        resp = client.get('/api/pipelines/status')
+        data = resp.get_json()
+        assert 'kill_switches' in data
+        assert 'trading' in data['kill_switches']
+
+    def test_pipeline_status_has_operational_mode(self, client):
+        resp = client.get('/api/pipelines/status')
+        data = resp.get_json()
+        assert 'operational_mode' in data
+
+    def test_pipeline_status_has_timestamp(self, client):
+        resp = client.get('/api/pipelines/status')
+        data = resp.get_json()
+        assert 'timestamp' in data
+
+    def test_pipeline_module_ids(self, client):
+        resp = client.get('/api/pipelines/status')
+        data = resp.get_json()
+        ids = [m['id'] for m in data['modules']]
+        assert 'market_data' in ids
+        assert 'factor_engine' in ids
+        assert 'signal_engine' in ids
+        assert 'portfolio_engine' in ids
+        assert 'risk_engine' in ids
+        assert 'execution_engine' in ids
+        assert 'dashboard' in ids
+
+    def test_pipeline_cached_status(self, client, app):
+        """Test that cached pipeline status is returned."""
+        with app.app_context():
+            from app.extensions import redis_client
+            redis_client.setex(
+                'cache:pipeline:factor_engine',
+                300,
+                json.dumps({
+                    'status': 'ok',
+                    'items_processed': 42,
+                    'compute_time_ms': 1200,
+                    'last_activity': '2026-03-14T12:00:00+00:00',
+                }),
+            )
+
+            resp = client.get('/api/pipelines/status')
+            data = resp.get_json()
+            factor_mod = next(m for m in data['modules'] if m['id'] == 'factor_engine')
+            assert factor_mod['items_processed'] == 42
+            assert factor_mod['compute_time_ms'] == 1200
+
+    def test_pipeline_queue_depth(self, client, app):
+        """Test queue depth for list-based channels."""
+        with app.app_context():
+            from app.extensions import redis_client
+            # Clear first, then push known items
+            redis_client.delete('channel:orders_proposed')
+            redis_client.lpush('channel:orders_proposed', 'order1', 'order2', 'order3')
+
+            resp = client.get('/api/pipelines/status')
+            data = resp.get_json()
+            portfolio_mod = next(m for m in data['modules'] if m['id'] == 'portfolio_engine')
+            assert portfolio_mod['queue_depth'] == 3

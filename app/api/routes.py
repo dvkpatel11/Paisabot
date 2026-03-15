@@ -663,6 +663,132 @@ def get_backtest_results():
     })
 
 
+# ── pipelines ─────────────────────────────────────────────────────
+
+@api_bp.route('/pipelines/status', methods=['GET'])
+def get_pipeline_status():
+    """Get real-time status of all 7 pipeline modules.
+
+    Returns per-module: status (ok/degraded/error/idle), last_activity,
+    items_processed, compute_time_ms, and queue depths for list-based channels.
+    """
+    now = datetime.now(timezone.utc)
+
+    # Module definitions with their Redis cache keys and channels
+    modules = [
+        {
+            'id': 'market_data',
+            'name': 'Market Data Layer',
+            'index': 1,
+            'cache_key': 'cache:pipeline:market_data',
+            'channel': 'channel:bars',
+        },
+        {
+            'id': 'factor_engine',
+            'name': 'Factor Engine',
+            'index': 2,
+            'cache_key': 'cache:pipeline:factor_engine',
+            'channel': 'channel:factor_scores',
+        },
+        {
+            'id': 'signal_engine',
+            'name': 'Signal Engine',
+            'index': 3,
+            'cache_key': 'cache:pipeline:signal_engine',
+            'channel': 'channel:signals',
+        },
+        {
+            'id': 'portfolio_engine',
+            'name': 'Portfolio Construction',
+            'index': 4,
+            'cache_key': 'cache:pipeline:portfolio_engine',
+            'channel': 'channel:orders_proposed',
+        },
+        {
+            'id': 'risk_engine',
+            'name': 'Risk Engine',
+            'index': 5,
+            'cache_key': 'cache:pipeline:risk_engine',
+            'channel': 'channel:orders_approved',
+        },
+        {
+            'id': 'execution_engine',
+            'name': 'Execution Engine',
+            'index': 6,
+            'cache_key': 'cache:pipeline:execution_engine',
+            'channel': 'channel:trades',
+        },
+        {
+            'id': 'dashboard',
+            'name': 'Dashboard & Analytics',
+            'index': 7,
+            'cache_key': 'cache:pipeline:dashboard',
+            'channel': None,
+        },
+    ]
+
+    result = []
+    for mod in modules:
+        cached = redis_client.get(mod['cache_key'])
+        if cached:
+            info = json.loads(cached)
+        else:
+            info = {}
+
+        # Queue depth for list-based channels
+        queue_depth = None
+        if mod['channel'] in ('channel:orders_proposed', 'channel:orders_approved'):
+            try:
+                queue_depth = redis_client.llen(mod['channel'])
+            except Exception:
+                queue_depth = 0
+
+        # Determine status from cached info
+        status = info.get('status', 'idle')
+        last_activity = info.get('last_activity')
+
+        # Auto-degrade if last activity too old (>10 min for fast, >60 min for slow)
+        if last_activity:
+            from datetime import timedelta
+            try:
+                last_dt = datetime.fromisoformat(last_activity)
+                stale_threshold = timedelta(minutes=10) if mod['id'] in ('market_data',) else timedelta(minutes=60)
+                if now - last_dt > stale_threshold:
+                    status = 'stale'
+            except (ValueError, TypeError):
+                pass
+
+        result.append({
+            'id': mod['id'],
+            'name': mod['name'],
+            'index': mod['index'],
+            'status': status,
+            'last_activity': last_activity,
+            'items_processed': info.get('items_processed', 0),
+            'compute_time_ms': info.get('compute_time_ms'),
+            'queue_depth': queue_depth,
+            'extra': info.get('extra', {}),
+        })
+
+    # Kill switches
+    kill_switches = {}
+    for switch in ('trading', 'rebalance', 'all'):
+        val = redis_client.get(f'kill_switch:{switch}')
+        kill_switches[switch] = val == b'1'
+
+    # Operational mode
+    mode = redis_client.hget('config:system', 'operational_mode')
+    if isinstance(mode, bytes):
+        mode = mode.decode()
+
+    return jsonify({
+        'modules': result,
+        'kill_switches': kill_switches,
+        'operational_mode': mode or 'simulation',
+        'timestamp': now.isoformat(),
+    })
+
+
 # ── helpers ────────────────────────────────────────────────────────
 
 def _to_float(val) -> float | None:

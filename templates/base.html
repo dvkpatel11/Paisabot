@@ -35,6 +35,7 @@
         Alerts
         <span class="badge badge-danger" id="alert-count" style="display:none">0</span>
       </a>
+      <a href="{{ url_for('views.pipelines') }}" class="nav-link {% if request.endpoint == 'views.pipelines' %}active{% endif %}">Pipelines</a>
       <a href="{{ url_for('views.config') }}" class="nav-link {% if request.endpoint == 'views.config' %}active{% endif %}">Config</a>
     </div>
     <div class="nav-status">

@@ -7,6 +7,7 @@ from app.streaming.publishers import (
     publish_config_change,
     publish_event,
     publish_factor_scores,
+    publish_pipeline_status,
     publish_portfolio,
     publish_regime_change,
     publish_risk_alert,
@@ -109,3 +110,34 @@ class TestSpecificPublishers:
         publish_config_change(redis, {'category': 'weights', 'key': 'trend'})
         msg = pubsub.get_message()
         assert msg is not None
+
+    def test_publish_pipeline_status(self, redis):
+        pubsub = redis.pubsub()
+        pubsub.subscribe('channel:system_health')
+        pubsub.get_message()
+
+        publish_pipeline_status(redis, 'factor_engine', {
+            'status': 'ok',
+            'items_processed': 42,
+            'compute_time_ms': 1200,
+        })
+
+        # Check pub/sub message
+        msg = pubsub.get_message()
+        assert msg is not None
+        data = json.loads(msg['data'])
+        assert data['module'] == 'factor_engine'
+        assert data['items_processed'] == 42
+
+        # Check cache key
+        cached = redis.get('cache:pipeline:factor_engine')
+        assert cached is not None
+        cached_data = json.loads(cached)
+        assert cached_data['status'] == 'ok'
+        assert 'last_activity' in cached_data
+
+    def test_publish_pipeline_status_adds_last_activity(self, redis):
+        publish_pipeline_status(redis, 'market_data', {'status': 'ok'})
+
+        cached = json.loads(redis.get('cache:pipeline:market_data'))
+        assert 'last_activity' in cached

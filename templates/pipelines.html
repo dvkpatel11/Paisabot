@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Pipelines - Paisabot{% endblock %}
+
+{% block content %}
+<div class="page-header" style="display:flex;align-items:center;justify-content:space-between">
+  <h1>Realtime Pipelines</h1>
+  <span class="text-muted" id="pipeline-last-update" style="font-family:var(--font-mono);font-size:12px">Last update: --</span>
+</div>
+
+<!-- Pipeline Flow -->
+<div class="panel panel-full" style="margin-bottom:16px">
+  <div class="panel-header">
+    <h2>Pipeline Flow</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span class="badge" id="pipeline-mode">--</span>
+      <span class="text-muted" style="font-size:12px" id="pipeline-mode-label"></span>
+    </div>
+  </div>
+  <div id="pipeline-flow" class="pipeline-flow"></div>
+</div>
+
+<!-- Module Metrics Grid -->
+<div class="grid grid-3" id="metrics-grid" style="margin-bottom:16px">
+  <div class="panel" id="metric-market_data">
+    <div class="panel-header"><h2>Data Ingestion</h2><span class="health-dot" id="dot-market_data">D</span></div>
+    <div class="metric-rows">
+      <div class="metric-row"><span class="metric-label">Items Processed</span><span class="metric-val" id="val-market_data-items">0</span></div>
+      <div class="metric-row"><span class="metric-label">Compute Time</span><span class="metric-val" id="val-market_data-time">-- ms</span></div>
+      <div class="metric-row"><span class="metric-label">Status</span><span class="metric-val" id="val-market_data-status">idle</span></div>
+      <div class="metric-row"><span class="metric-label">Last Activity</span><span class="metric-val" id="val-market_data-last">--</span></div>
+    </div>
+  </div>
+  <div class="panel" id="metric-factor_engine">
+    <div class="panel-header"><h2>Factor Engine</h2><span class="health-dot" id="dot-factor_engine">F</span></div>
+    <div class="metric-rows">
+      <div class="metric-row"><span class="metric-label">Symbols Computed</span><span class="metric-val" id="val-factor_engine-items">0</span></div>
+      <div class="metric-row"><span class="metric-label">Compute Time</span><span class="metric-val" id="val-factor_engine-time">-- ms</span></div>
+      <div class="metric-row"><span class="metric-label">Status</span><span class="metric-val" id="val-factor_engine-status">idle</span></div>
+      <div class="metric-row"><span class="metric-label">Last Activity</span><span class="metric-val" id="val-factor_engine-last">--</span></div>
+    </div>
+  </div>
+  <div class="panel" id="metric-signal_engine">
+    <div class="panel-header"><h2>Signal Engine</h2><span class="health-dot" id="dot-signal_engine">S</span></div>
+    <div class="metric-rows">
+      <div class="metric-row"><span class="metric-label">Signals Generated</span><span class="metric-val" id="val-signal_engine-items">0</span></div>
+      <div class="metric-row"><span class="metric-label">Cycle Time</span><span class="metric-val" id="val-signal_engine-time">-- ms</span></div>
+      <div class="metric-row"><span class="metric-label">Status</span><span class="metric-val" id="val-signal_engine-status">idle</span></div>
+      <div class="metric-row"><span class="metric-label">Last Activity</span><span class="metric-val" id="val-signal_engine-last">--</span></div>
+    </div>
+  </div>
+  <div class="panel" id="metric-portfolio_engine">
+    <div class="panel-header"><h2>Portfolio Build</h2><span class="health-dot" id="dot-portfolio_engine">P</span></div>
+    <div class="metric-rows">
+      <div class="metric-row"><span class="metric-label">Portfolios Built</span><span class="metric-val" id="val-portfolio_engine-items">0</span></div>
+      <div class="metric-row"><span class="metric-label">Build Time</span><span class="metric-val" id="val-portfolio_engine-time">-- ms</span></div>
+      <div class="metric-row"><span class="metric-label">Queue Depth</span><span class="metric-val" id="val-portfolio_engine-queue">0</span></div>
+      <div class="metric-row"><span class="metric-label">Last Activity</span><span class="metric-val" id="val-portfolio_engine-last">--</span></div>
+    </div>
+  </div>
+  <div class="panel" id="metric-risk_engine">
+    <div class="panel-header"><h2>Risk Gating</h2><span class="health-dot" id="dot-risk_engine">R</span></div>
+    <div class="metric-rows">
+      <div class="metric-row"><span class="metric-label">Orders Reviewed</span><span class="metric-val" id="val-risk_engine-items">0</span></div>
+      <div class="metric-row"><span class="metric-label">Latency</span><span class="metric-val" id="val-risk_engine-time">-- ms</span></div>
+      <div class="metric-row"><span class="metric-label">Queue Depth</span><span class="metric-val" id="val-risk_engine-queue">0</span></div>
+      <div class="metric-row"><span class="metric-label">Last Activity</span><span class="metric-val" id="val-risk_engine-last">--</span></div>
+    </div>
+  </div>
+  <div class="panel" id="metric-execution_engine">
+    <div class="panel-header"><h2>Execution</h2><span class="health-dot" id="dot-execution_engine">E</span></div>
+    <div class="metric-rows">
+      <div class="metric-row"><span class="metric-label">Orders Filled</span><span class="metric-val" id="val-execution_engine-items">0</span></div>
+      <div class="metric-row"><span class="metric-label">Avg Slippage</span><span class="metric-val" id="val-execution_engine-time">-- bps</span></div>
+      <div class="metric-row"><span class="metric-label">Status</span><span class="metric-val" id="val-execution_engine-status">idle</span></div>
+      <div class="metric-row"><span class="metric-label">Last Fill</span><span class="metric-val" id="val-execution_engine-last">--</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- Throughput Chart -->
+<div class="panel panel-full" style="margin-bottom:16px">
+  <div class="panel-header">
+    <h2>Pipeline Throughput (Last 60 min)</h2>
+  </div>
+  <div id="throughput-chart" style="height:280px"></div>
+</div>
+
+<!-- Kill Switch Summary -->
+<div class="panel panel-full" style="margin-bottom:16px">
+  <div class="panel-header">
+    <h2>Kill Switches</h2>
+  </div>
+  <div class="switch-grid" id="kill-switch-grid"></div>
+</div>
+
+<!-- Event Feed -->
+<div class="panel panel-full">
+  <div class="panel-header">
+    <h2>Pipeline Events</h2>
+    <span class="badge" id="event-total">0</span>
+  </div>
+  <div id="events-table"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/pipelines.js') }}"></script>
+{% endblock %}

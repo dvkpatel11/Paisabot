@@ -21,7 +21,27 @@
       "Bash(python -m pytest tests/test_api/ -v)",
       "Bash(python -m pytest tests/test_api/ tests/test_streaming/ tests/test_execution/ tests/test_risk/ tests/test_portfolio/ -v)",
       "Bash(find /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/elegant-bartik/migrations -type f -name *.py)",
-      "Bash(ls -la /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/elegant-bartik/app/*.py)"
+      "Bash(ls -la /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/elegant-bartik/app/*.py)",
+      "Bash(ls tests/test_*/)",
+      "Bash(python -m venv venv)",
+      "Bash(source venv/Scripts/activate)",
+      "Bash(pip install:*)",
+      "Bash(python -c \"import flask; import fakeredis; import pytest; print\\(''core deps ok''\\)\")",
+      "Bash(python -c \"import flask; import fakeredis; import pytest; import structlog; import pyportfolioopt; print\\(''all core deps ok''\\)\")",
+      "Bash(python -c \"import flask; import fakeredis; import structlog; print\\(''ok''\\)\")",
+      "Bash(python -m pytest tests/test_views/test_routes.py tests/test_streaming/test_publishers.py -x -v)",
+      "Bash(python -m pytest tests/test_views/test_routes.py -x -v)",
+      "Bash(python -m pytest tests/test_streaming/test_publishers.py tests/test_api/test_routes.py -x -v)",
+      "Bash(python -m pytest tests/test_integration/test_pipeline_e2e.py -x -v)",
+      "Bash(python -c \"from app.execution.broker_base import BrokerOrder; import inspect; print\\(inspect.signature\\(BrokerOrder\\)\\)\")",
+      "Bash(python -c \"from app.execution.order_manager import OrderManager; import inspect; print\\(inspect.signature\\(OrderManager.execute_order\\)\\)\")",
+      "Bash(python -m pytest tests/ -v --tb=short)",
+      "Bash(alembic revision:*)",
+      "Bash(python -c \":*)",
+      "Bash(DATABASE_URL=\"postgresql://paisabot:paisabot@127.0.0.1:5432/paisabot\" alembic revision --autogenerate -m \"Initial schema: 8 tables\")",
+      "Bash(DATABASE_URL=\"postgresql://paisabot:paisabot@127.0.0.1:5432/paisabot\" alembic upgrade head)",
+      "Bash(DATABASE_URL=\"postgresql://paisabot:paisabot@127.0.0.1:5432/paisabot\" python scripts/seed_config.py)",
+      "Bash(DATABASE_URL=\"postgresql://paisabot:paisabot@127.0.0.1:5432/paisabot\" python scripts/universe_setup.py)"
     ]
   }
 }
