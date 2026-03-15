@@ -68,6 +68,26 @@
       const now = new Date();
       document.getElementById('nav-clock').textContent = now.toLocaleTimeString('en-US', {hour12: false});
     }, 1000);
+
+    // Nav alert badge — increments on any risk_alert event, cleared when visiting /alerts
+    (function() {
+      let _alertCount = 0;
+      const badge = document.getElementById('alert-count');
+
+      document.addEventListener('DOMContentLoaded', function() {
+        PaisaSocket.on('risk_alert', function() {
+          _alertCount++;
+          badge.textContent = _alertCount;
+          badge.style.display = '';
+        });
+
+        // Clear badge when on the alerts page
+        if (window.location.pathname === '/alerts') {
+          _alertCount = 0;
+          badge.style.display = 'none';
+        }
+      });
+    })();
   </script>
 
   {% block scripts %}{% endblock %}

@@ -248,10 +248,13 @@ class PipelineOrchestrator:
         return pd.DataFrame(frames).dropna(how='all')
 
     def _get_portfolio_value(self, positions: list[dict]) -> float:
-        """Compute portfolio value from positions + initial capital."""
-        from app.models.positions import Position
+        """Compute portfolio value from positions + initial capital.
 
-        total_notional = sum(p.get('notional', 0) for p in positions)
+        Aggregates PnL in SQL to avoid loading the full position history
+        into memory — critical after months of trading with many closed positions.
+        """
+        from app.extensions import db as _db
+        from sqlalchemy import func, text
 
         # Get initial capital from config
         initial_capital = 100_000.0
@@ -263,13 +266,17 @@ class PipelineOrchestrator:
                 except (ValueError, TypeError):
                     pass
 
-        # Include realized PnL from closed positions
-        closed = Position.query.filter_by(status='closed').all()
-        realized = sum(float(p.realized_pnl or 0) for p in closed)
+        # Aggregate realized PnL for all closed positions in one SQL query
+        realized_row = _db.session.execute(
+            text("SELECT COALESCE(SUM(realized_pnl), 0) FROM positions WHERE status = 'closed'")
+        ).fetchone()
+        realized = float(realized_row[0]) if realized_row else 0.0
 
-        # Include unrealized from open
-        open_pos = Position.query.filter_by(status='open').all()
-        unrealized = sum(float(p.unrealized_pnl or 0) for p in open_pos)
+        # Aggregate unrealized PnL for open positions in one SQL query
+        unrealized_row = _db.session.execute(
+            text("SELECT COALESCE(SUM(unrealized_pnl), 0) FROM positions WHERE status = 'open'")
+        ).fetchone()
+        unrealized = float(unrealized_row[0]) if unrealized_row else 0.0
 
         return initial_capital + realized + unrealized
 

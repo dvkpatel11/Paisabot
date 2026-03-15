@@ -3,11 +3,27 @@ from __future__ import annotations
 from flask import redirect, url_for
 from flask_admin import Admin, AdminIndexView, BaseView, expose
 from flask_admin.contrib.sqla import ModelView
+from flask_login import current_user
 
 from app.extensions import db, redis_client
 
 
-class PaisabotAdminIndex(AdminIndexView):
+def _is_admin() -> bool:
+    """Return True only when a logged-in admin user is making the request."""
+    return current_user.is_authenticated
+
+
+class _AdminAuthMixin:
+    """Mixin that gates every Flask-Admin view behind login."""
+
+    def is_accessible(self):
+        return _is_admin()
+
+    def inaccessible_callback(self, name, **kwargs):
+        return redirect(url_for('auth_bp.login_page'))
+
+
+class PaisabotAdminIndex(_AdminAuthMixin, AdminIndexView):
     """Custom admin index showing system summary."""
 
     @expose('/')
@@ -38,7 +54,7 @@ class PaisabotAdminIndex(AdminIndexView):
         )
 
 
-class SystemConfigView(ModelView):
+class SystemConfigView(_AdminAuthMixin, ModelView):
     """Admin CRUD for system_config table with Redis sync on save."""
 
     column_list = ['category', 'key', 'value', 'value_type', 'description', 'updated_at', 'updated_by']
@@ -57,7 +73,7 @@ class SystemConfigView(ModelView):
         redis_client.hdel(f'config:{model.category}', model.key)
 
 
-class TradeView(ModelView):
+class TradeView(_AdminAuthMixin, ModelView):
     """Read-only admin view for trade audit trail."""
 
     can_create = False
@@ -72,7 +88,7 @@ class TradeView(ModelView):
     page_size = 50
 
 
-class PositionView(ModelView):
+class PositionView(_AdminAuthMixin, ModelView):
     """Admin view for positions."""
 
     column_list = [
@@ -85,7 +101,7 @@ class PositionView(ModelView):
     page_size = 50
 
 
-class ETFUniverseView(ModelView):
+class ETFUniverseView(_AdminAuthMixin, ModelView):
     """Admin view for ETF universe management."""
 
     column_list = [
@@ -98,7 +114,7 @@ class ETFUniverseView(ModelView):
     column_default_sort = ('symbol', False)
 
 
-class FactorScoreView(ModelView):
+class FactorScoreView(_AdminAuthMixin, ModelView):
     """Read-only view of factor scores."""
 
     can_create = False
@@ -114,7 +130,7 @@ class FactorScoreView(ModelView):
     page_size = 50
 
 
-class SignalView(ModelView):
+class SignalView(_AdminAuthMixin, ModelView):
     """Read-only view of signals."""
 
     can_create = False
@@ -129,7 +145,7 @@ class SignalView(ModelView):
     page_size = 50
 
 
-class KillSwitchView(BaseView):
+class KillSwitchView(_AdminAuthMixin, BaseView):
     """Custom view for kill switch management."""
 
     @expose('/')
@@ -154,7 +170,7 @@ class KillSwitchView(BaseView):
         return redirect(url_for('.index'))
 
 
-class ApiTestView(BaseView):
+class ApiTestView(_AdminAuthMixin, BaseView):
     """Interactive API validation console."""
 
     @expose('/')
@@ -162,7 +178,7 @@ class ApiTestView(BaseView):
         return self.render('admin/api_test.html')
 
 
-class PerformanceView(ModelView):
+class PerformanceView(_AdminAuthMixin, ModelView):
     """Read-only view of daily performance metrics."""
 
     can_create = False

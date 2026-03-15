@@ -183,9 +183,25 @@ class OrderManager:
         # 9. Wait for fill
         final_order = self._fill_monitor.wait_for_fill(broker_order.order_id)
 
-        # 10. Measure post-trade slippage
+        # 10. Detect partial fill and measure post-trade slippage
         actual_slippage_bps = None
-        if final_order.status == 'filled' and final_order.filled_avg_price:
+        effective_status = final_order.status
+        filled_qty = final_order.filled_qty or 0
+
+        # An order cancelled after timeout may have partially filled at the broker.
+        # Promote to 'partial_fill' so position tracking records the actual shares held.
+        if effective_status in ('cancelled', 'expired') and filled_qty > 0:
+            effective_status = 'partial_fill'
+            self._log.warning(
+                'order_partial_fill_detected',
+                symbol=symbol,
+                broker_order_id=broker_order.order_id,
+                filled_qty=filled_qty,
+                requested_qty=qty,
+                pct_filled=round(filled_qty / qty, 4) if qty else 0,
+            )
+
+        if effective_status in ('filled', 'partial_fill') and final_order.filled_avg_price:
             actual_slippage_bps = self._slippage.measure_posttrade(
                 final_order.filled_avg_price, mid_price, side,
             )
@@ -201,10 +217,10 @@ class OrderManager:
         # 11. Build result
         result = self._result(
             order,
-            status=final_order.status,
+            status=effective_status,
             broker_order_id=final_order.order_id,
             fill_price=final_order.filled_avg_price,
-            filled_qty=final_order.filled_qty,
+            filled_qty=filled_qty,
             filled_at=final_order.filled_at,
             mid_at_submission=mid_price,
             estimated_slippage_bps=slippage_check['estimated_bps'],
@@ -213,7 +229,7 @@ class OrderManager:
         )
 
         # 12. Publish fill event
-        if final_order.status == 'filled':
+        if effective_status in ('filled', 'partial_fill'):
             self._publish_fill(result)
 
         return result

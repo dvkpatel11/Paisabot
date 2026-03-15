@@ -6,23 +6,27 @@
   <h1>Execution & Risk Control</h1>
 </div>
 
-<!-- Risk Metrics Row -->
-<div class="grid grid-4">
+<!-- Risk Metrics Row — driven by Alpine store 'risk' -->
+<div class="grid grid-4" x-data>
   <div class="panel">
     <div class="panel-label">Drawdown</div>
-    <div class="panel-value" id="exec-drawdown">--%</div>
+    <div class="panel-value" x-text="$store.risk.drawdown" :style="{color: $store.risk.drawdownColor}">--%</div>
   </div>
   <div class="panel">
     <div class="panel-label">VaR (95%)</div>
-    <div class="panel-value" id="exec-var">--%</div>
+    <div class="panel-value" x-text="$store.risk.var95">--%</div>
   </div>
   <div class="panel">
     <div class="panel-label">Volatility (30d)</div>
-    <div class="panel-value" id="exec-vol">--%</div>
+    <div class="panel-value" x-text="$store.risk.vol30d">--%</div>
   </div>
   <div class="panel">
     <div class="panel-label">Sharpe (30d)</div>
-    <div class="panel-value" id="exec-sharpe">--</div>
+    <div class="panel-value"
+      x-text="$store.risk.sharpe30d"
+      :style="{color: parseFloat($store.risk.sharpe30d) >= 1 ? 'var(--green)' : parseFloat($store.risk.sharpe30d) >= 0 ? 'var(--text-primary)' : 'var(--red)'}">
+      --
+    </div>
   </div>
 </div>
 
@@ -104,71 +108,91 @@
 
 {% block scripts %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-  // Positions table
-  PaisaTables.create('exec-positions-table', [
-    {title: 'Symbol', field: 'symbol', width: 80},
-    {title: 'Direction', field: 'direction', width: 70},
-    {title: 'Entry', field: 'entry_price', formatter: 'money', formatterParams: {precision: 2}},
-    {title: 'Current', field: 'current_price', formatter: 'money', formatterParams: {precision: 2}},
-    {title: 'Qty', field: 'quantity'},
-    {title: 'Weight', field: 'weight', formatter: PaisaTables.pctFormatter},
-    {title: 'P&L', field: 'unrealized_pnl', formatter: PaisaTables.pnlFormatter},
-    {title: 'HWM', field: 'high_watermark', formatter: 'money', formatterParams: {precision: 2}},
-  ]);
+// ── Alpine store for risk metrics ──────────────────────────────────
+document.addEventListener('alpine:init', () => {
+  Alpine.store('risk', {
+    drawdown:      '--%',
+    drawdownColor: 'var(--text-primary)',
+    var95:         '--%',
+    vol30d:        '--%',
+    sharpe30d:     '--',
+  });
 
-  // Trades table
-  PaisaTables.create('exec-trades-table', [
-    {title: 'Symbol', field: 'symbol', width: 80},
-    {title: 'Side', field: 'side', width: 50},
-    {title: 'Type', field: 'order_type', width: 70},
-    {title: 'Requested', field: 'requested_notional', formatter: 'money'},
-    {title: 'Filled', field: 'filled_notional', formatter: 'money'},
-    {title: 'Fill Price', field: 'fill_price', formatter: 'money', formatterParams: {precision: 2}},
-    {title: 'Slippage', field: 'slippage_bps', formatter: PaisaTables.bpsFormatter},
-    {title: 'Status', field: 'status'},
-    {title: 'Time', field: 'trade_time', formatter: PaisaTables.timeFormatter},
-  ]);
-
-  // Load data
-  fetch('/api/risk').then(r => r.json()).then(data => {
-    if (data.latest_metrics) {
-      document.getElementById('exec-drawdown').textContent = PaisaUtils.pct(data.latest_metrics.drawdown);
-      document.getElementById('exec-var').textContent = PaisaUtils.pct(data.latest_metrics.var_95);
-      document.getElementById('exec-vol').textContent = PaisaUtils.pct(data.latest_metrics.volatility_30d);
-      document.getElementById('exec-sharpe').textContent = (data.latest_metrics.sharpe_30d || 0).toFixed(2);
+  function applyRiskMetrics(data) {
+    const s = Alpine.store('risk');
+    const m = data.latest_metrics || data;
+    if (m.drawdown != null) {
+      s.drawdown      = PaisaUtils.pct(m.drawdown);
+      const dd        = Math.abs(m.drawdown * 100);
+      s.drawdownColor = dd > 10 ? 'var(--red)' : dd > 5 ? 'var(--yellow)' : 'var(--text-primary)';
     }
+    if (m.var_95        != null) s.var95     = PaisaUtils.pct(m.var_95);
+    if (m.volatility_30d != null) s.vol30d   = PaisaUtils.pct(m.volatility_30d);
+    if (m.sharpe_30d    != null) s.sharpe30d = (m.sharpe_30d || 0).toFixed(2);
+  }
 
-    // Kill switches
+  // Initial load — also populates kill switches (non-Alpine, remains vanilla)
+  fetch('/api/risk').then(r => r.json()).then(data => {
+    applyRiskMetrics(data);
+
     const container = document.getElementById('kill-switches');
     container.innerHTML = '';
     if (data.kill_switches) {
       Object.entries(data.kill_switches).forEach(([name, active]) => {
         const div = document.createElement('div');
         div.className = 'switch-item ' + (active ? 'switch-active' : 'switch-inactive');
-        div.innerHTML = '<span class="switch-name">' + name.replace('_', ' ').toUpperCase() + '</span>' +
-                         '<span class="switch-status">' + (active ? 'ACTIVE' : 'OFF') + '</span>';
-        div.onclick = function() { toggleSwitch(name, !active); };
+        div.innerHTML = `<span class="switch-name">${name.replace('_', ' ').toUpperCase()}</span>`
+                      + `<span class="switch-status">${active ? 'ACTIVE' : 'OFF'}</span>`;
+        div.onclick = () => toggleSwitch(name, !active);
         container.appendChild(div);
       });
     }
   });
 
+  // Live risk updates on alert
+  PaisaSocket.on('risk_alert', () => {
+    fetch('/api/risk').then(r => r.json()).then(applyRiskMetrics);
+  });
+});
+
+// ── Tabulator tables + non-reactive logic ─────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+
+  PaisaTables.create('exec-positions-table', [
+    {title: 'Symbol',    field: 'symbol',         width: 80},
+    {title: 'Direction', field: 'direction',       width: 70},
+    {title: 'Entry',     field: 'entry_price',    formatter: 'money', formatterParams: {precision: 2}},
+    {title: 'Current',   field: 'current_price',  formatter: 'money', formatterParams: {precision: 2}},
+    {title: 'Qty',       field: 'quantity'},
+    {title: 'Weight',    field: 'weight',         formatter: PaisaTables.pctFormatter},
+    {title: 'P&L',       field: 'unrealized_pnl', formatter: PaisaTables.pnlFormatter},
+    {title: 'HWM',       field: 'high_watermark', formatter: 'money', formatterParams: {precision: 2}},
+  ]);
+
+  PaisaTables.create('exec-trades-table', [
+    {title: 'Symbol',    field: 'symbol',             width: 80},
+    {title: 'Side',      field: 'side',               width: 50},
+    {title: 'Type',      field: 'order_type',         width: 70},
+    {title: 'Requested', field: 'requested_notional', formatter: 'money'},
+    {title: 'Filled',    field: 'filled_notional',    formatter: 'money'},
+    {title: 'Fill Price',field: 'fill_price',         formatter: 'money', formatterParams: {precision: 2}},
+    {title: 'Slippage',  field: 'slippage_bps',       formatter: PaisaTables.bpsFormatter},
+    {title: 'Status',    field: 'status'},
+    {title: 'Time',      field: 'trade_time',         formatter: PaisaTables.timeFormatter},
+  ]);
+
   fetch('/api/portfolio').then(r => r.json()).then(data => {
     if (data.positions) {
       PaisaTables.setData('exec-positions-table', data.positions);
-
-      // Exposure chart
       const sectors = {};
       data.positions.forEach(p => {
         const s = p.sector || 'Unknown';
         sectors[s] = (sectors[s] || 0) + (p.weight || 0);
       });
-
       PaisaCharts.pie('exposure-chart', {
         labels: Object.keys(sectors),
         values: Object.values(sectors),
-        title: 'Sector Allocation',
+        title:  'Sector Allocation',
       });
     }
   });
@@ -177,27 +201,6 @@ document.addEventListener('DOMContentLoaded', function() {
     PaisaTables.setData('exec-trades-table', data);
   });
 
-  function toggleSwitch(name, active) {
-    fetch('/api/control/' + name, {
-      method: 'PATCH',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({active: active}),
-    }).then(() => location.reload());
-  }
-
-  PaisaSocket.on('risk_alert', function(data) {
-    fetch('/api/risk').then(r => r.json()).then(d => {
-      if (d.latest_metrics) {
-        document.getElementById('exec-drawdown').textContent = PaisaUtils.pct(d.latest_metrics.drawdown);
-      }
-    });
-  });
-
-  PaisaSocket.on('trade', function() {
-    fetch('/api/trades?limit=50').then(r => r.json()).then(d => PaisaTables.setData('exec-trades-table', d));
-  });
-
-  // Populate manual trade symbol dropdown from universe
   fetch('/api/universe').then(r => r.json()).then(etfs => {
     const sel = document.getElementById('mt-symbol');
     etfs.forEach(e => {
@@ -208,24 +211,38 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
-  // Show/hide limit price
   document.getElementById('mt-type').addEventListener('change', function() {
     document.getElementById('mt-limit-row').style.display = this.value === 'limit' ? '' : 'none';
   });
+
+  PaisaSocket.on('trade', () => {
+    fetch('/api/trades?limit=50').then(r => r.json()).then(d => PaisaTables.setData('exec-trades-table', d));
+    fetch('/api/portfolio').then(r => r.json()).then(data => {
+      if (data.positions) PaisaTables.setData('exec-positions-table', data.positions);
+    });
+  });
 });
 
+function toggleSwitch(name, active) {
+  fetch('/api/control/' + name, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({active: active}),
+  }).then(() => location.reload());
+}
+
 function submitManualTrade() {
-  const btn = document.getElementById('mt-submit');
+  const btn    = document.getElementById('mt-submit');
   const status = document.getElementById('mt-status');
   btn.disabled = true;
 
   const orderType = document.getElementById('mt-type').value;
   const body = {
-    symbol: document.getElementById('mt-symbol').value,
-    side: document.getElementById('mt-side').value,
+    symbol:     document.getElementById('mt-symbol').value,
+    side:       document.getElementById('mt-side').value,
     order_type: orderType,
-    notional: parseFloat(document.getElementById('mt-notional').value),
-    broker: document.getElementById('mt-broker').value,
+    notional:   parseFloat(document.getElementById('mt-notional').value),
+    broker:     document.getElementById('mt-broker').value,
   };
   if (orderType === 'limit') {
     body.limit_price = parseFloat(document.getElementById('mt-limit').value);
@@ -246,7 +263,6 @@ function submitManualTrade() {
     } else {
       status.textContent = 'Trade submitted (ID: ' + data.trade_id + ')';
       status.style.color = 'var(--green)';
-      // Refresh trades table
       fetch('/api/trades?limit=50').then(r => r.json()).then(d => PaisaTables.setData('exec-trades-table', d));
     }
   })

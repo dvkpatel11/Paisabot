@@ -46,7 +46,6 @@ def health():
     # Check Alpaca
     import os
     alpaca_key = os.environ.get('ALPACA_API_KEY', '')
-    alpaca_account = None
     if alpaca_key:
         try:
             from alpaca.trading.client import TradingClient
@@ -55,9 +54,8 @@ def health():
                 os.environ.get('ALPACA_SECRET_KEY', ''),
                 paper=os.environ.get('ALPACA_PAPER', 'true').lower() == 'true',
             )
-            account = client.get_account()
+            client.get_account()
             components['alpaca'] = 'ok'
-            alpaca_account = account.account_number
         except Exception as exc:
             components['alpaca'] = 'error'
             details['alpaca'] = str(exc)
@@ -82,8 +80,8 @@ def health():
         'kill_switches': kill_switches,
         'timestamp': datetime.now(timezone.utc).isoformat(),
     }
-    if alpaca_account:
-        result['alpaca_account'] = alpaca_account
+    # Never expose the broker account number on an unauthenticated endpoint.
+    # alpaca_account is intentionally omitted here.
 
     return jsonify(result)
 
@@ -91,6 +89,7 @@ def health():
 # ── scores ─────────────────────────────────────────────────────────
 
 @api_bp.route('/scores', methods=['GET'])
+@api_login_required
 def get_scores():
     """Get latest composite scores for all ETFs.
 
@@ -173,6 +172,7 @@ def _apply_preview_weights(scores: dict, weights: dict) -> dict:
 # ── signals ────────────────────────────────────────────────────────
 
 @api_bp.route('/signals', methods=['GET'])
+@api_login_required
 def get_signals():
     """Get latest signals grouped by type."""
     cached = redis_client.get('cache:signals:latest')
@@ -245,6 +245,7 @@ def get_regime():
 # ── portfolio ──────────────────────────────────────────────────────
 
 @api_bp.route('/portfolio', methods=['GET'])
+@api_login_required
 def get_portfolio():
     """Get current portfolio state: positions, weights, PnL."""
     cached = redis_client.get('cache:portfolio:latest')
@@ -276,6 +277,7 @@ def get_portfolio():
 # ── risk ───────────────────────────────────────────────────────────
 
 @api_bp.route('/risk', methods=['GET'])
+@api_login_required
 def get_risk():
     """Get current risk state."""
     cached = redis_client.get('cache:risk_state')
@@ -313,6 +315,7 @@ def get_risk():
 # ── trades ─────────────────────────────────────────────────────────
 
 @api_bp.route('/trades', methods=['GET'])
+@api_login_required
 def get_trades():
     """Get recent trade execution log.
 
@@ -388,10 +391,52 @@ def submit_manual_trade():
     if not etf:
         return jsonify({'error': f'{symbol} not found in active universe'}), 400
 
-    # Check kill switches
-    kill_rebalance = redis_client.get('kill_switch:rebalance')
-    if kill_rebalance and kill_rebalance != '0':
+    # Check kill switches — fail-safe: block trading if Redis is unreachable.
+    # Use strict == '1' so only an explicit '1' value permits trading.
+    try:
+        kill_rebalance = redis_client.get('kill_switch:rebalance')
+    except Exception:
+        return jsonify({'error': 'Kill switch status unavailable — trading disabled'}), 503
+    if kill_rebalance == '1':
         return jsonify({'error': 'Rebalance kill switch is active — trading disabled'}), 403
+
+    # Run pre-trade risk gate — same checks as algorithmic orders.
+    # Manual submissions must not bypass position/sector/drawdown limits.
+    try:
+        from app.models.positions import Position as _Position
+        from app.risk.pre_trade_gate import PreTradeGate
+
+        open_positions = _Position.query.filter_by(status='open').all()
+        positions_list = [
+            {
+                'symbol': p.symbol,
+                'weight': float(p.weight or 0),
+                'sector': p.sector or 'Unknown',
+                'status': p.status,
+            }
+            for p in open_positions
+        ]
+
+        raw_cap = redis_client.hget('config:portfolio', 'initial_capital')
+        initial_capital = float(raw_cap) if raw_cap else 100_000.0
+        realized = sum(float(p.realized_pnl or 0) for p in
+                       _Position.query.filter_by(status='closed').all())
+        unrealized = sum(float(p.unrealized_pnl or 0) for p in open_positions)
+        portfolio_value = initial_capital + realized + unrealized
+
+        gate = PreTradeGate(redis_client)
+        gate_result = gate.evaluate(
+            proposed_orders=[{'symbol': symbol, 'side': side, 'notional': float(notional)}],
+            current_positions=positions_list,
+            portfolio_value=portfolio_value,
+        )
+
+        if gate_result.get('blocked'):
+            block_reason = gate_result['blocked'][0].get('block_reason', 'risk_gate_blocked')
+            return jsonify({'error': f'Risk gate blocked trade: {block_reason}'}), 403
+    except Exception as exc:
+        # Gate failure is fail-safe: block the trade rather than allow it through
+        return jsonify({'error': f'Risk gate check failed: {exc}'}), 503
 
     # Get operational mode
     mode = redis_client.hget('config:system', 'operational_mode') or 'simulation'
@@ -432,6 +477,7 @@ def submit_manual_trade():
 # ── factors (per symbol) ──────────────────────────────────────────
 
 @api_bp.route('/factors/<symbol>', methods=['GET'])
+@api_login_required
 def get_factors(symbol: str):
     """Get historical factor scores for a single ETF.
 
@@ -578,8 +624,11 @@ def update_config(category: str):
             )
             db.session.add(row)
 
-        # Sync plaintext to Redis (in-memory, not persisted to disk)
-        redis_client.hset(f'config:{category}', key, str(value))
+        # Sync non-secret config to Redis for fast reads.
+        # Secrets stay in PostgreSQL only (encrypted); never written to Redis
+        # to prevent exposure via Redis dumps, logs, or SUBSCRIBE sniffing.
+        if not is_secret:
+            redis_client.hset(f'config:{category}', key, str(value))
 
         # Mask secrets in the response
         display_old = mask_secret(old_value) if is_secret and old_value else old_value
@@ -696,6 +745,7 @@ def update_mode():
 
 
 @api_bp.route('/config/audit', methods=['GET'])
+@api_login_required
 def get_config_audit():
     """Get config change audit trail from system_config updated_at."""
     from app.models.system_config import SystemConfig
@@ -773,8 +823,13 @@ def force_liquidate():
 
 # ── universe ───────────────────────────────────────────────────────
 
-def _serialize_etf(e) -> dict:
-    """Serialize an ETFUniverse row with all tracking columns."""
+def _serialize_etf(e, current_price: float | None = None, prev_close: float | None = None) -> dict:
+    """Serialize an ETFUniverse row with all tracking columns.
+
+    Args:
+        current_price: Latest mid price from Redis cache (None if unavailable).
+        prev_close:    Previous trading day's close from price_bars (None if unavailable).
+    """
     return {
         'symbol': e.symbol,
         'name': e.name,
@@ -796,6 +851,9 @@ def _serialize_etf(e) -> dict:
         'perf_1m': _to_float(e.perf_1m),
         'perf_3m': _to_float(e.perf_3m),
         'correlation_to_spy': _to_float(e.correlation_to_spy),
+        # Live price fields — populated when Redis cache is warm
+        'current_price': current_price,
+        'prev_close': prev_close,
     }
 
 
@@ -805,8 +863,13 @@ def get_universe():
 
     Query params:
         active_set=true  — filter to active trading set only
+
+    Includes current_price (from Redis cache:mid_prices) and prev_close
+    (from price_bars) so the frontend can display live prices and intraday
+    change % without an extra round-trip.
     """
     from app.models.etf_universe import ETFUniverse
+    from sqlalchemy import text as _text
 
     query = ETFUniverse.query.filter_by(is_active=True)
 
@@ -814,7 +877,42 @@ def get_universe():
         query = query.filter_by(in_active_set=True)
 
     etfs = query.order_by(ETFUniverse.symbol).all()
-    return jsonify([_serialize_etf(e) for e in etfs])
+    symbols = [e.symbol for e in etfs]
+
+    # Batch-fetch current prices from Redis cache (written by data layer on each bar)
+    current_prices: dict[str, float] = {}
+    try:
+        raw = redis_client.hmget('cache:mid_prices', symbols)
+        for sym, val in zip(symbols, raw):
+            if val is not None:
+                try:
+                    current_prices[sym] = float(val)
+                except (ValueError, TypeError):
+                    pass
+    except Exception:
+        pass  # price display degrades gracefully to '--'
+
+    # Batch-fetch previous trading day's close in a single DB query
+    prev_closes: dict[str, float] = {}
+    try:
+        rows = db.session.execute(_text("""
+            SELECT DISTINCT ON (symbol) symbol, close
+            FROM price_bars
+            WHERE bar_time::date < current_date
+            ORDER BY symbol, bar_time DESC
+        """)).fetchall()
+        prev_closes = {row[0]: float(row[1]) for row in rows}
+    except Exception:
+        pass  # change % degrades gracefully to '--'
+
+    return jsonify([
+        _serialize_etf(
+            e,
+            current_price=current_prices.get(e.symbol),
+            prev_close=prev_closes.get(e.symbol),
+        )
+        for e in etfs
+    ])
 
 
 @api_bp.route('/universe/<symbol>/active-set', methods=['PATCH'])

@@ -15,6 +15,10 @@ class BaseConfig:
     CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/1')
     CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'redis://localhost:6379/2')
     FERNET_KEY = os.environ.get('FERNET_KEY', '')
+    # Comma-separated list of origins allowed to open WebSocket connections.
+    # Set CORS_ALLOWED_ORIGINS=https://yourdomain.com in production .env
+    _cors_raw = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:5000')
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_raw.split(',') if o.strip()]
 
 
 class DevelopmentConfig(BaseConfig):

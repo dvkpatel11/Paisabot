@@ -7,6 +7,25 @@ from app.factors.base import FactorBase
 
 logger = structlog.get_logger()
 
+# Module-level FinBERT singleton — loaded once on first use, reused thereafter.
+# Loading the ~100 MB model on every call blocks the worker for 10-30 seconds.
+_finbert_tokenizer = None
+_finbert_model = None
+
+
+def _get_finbert():
+    """Return the (tokenizer, model) singleton, loading on first call."""
+    global _finbert_tokenizer, _finbert_model
+    if _finbert_tokenizer is None or _finbert_model is None:
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+        model_name = 'ProsusAI/finbert'
+        logger.info('finbert_loading', model=model_name)
+        _finbert_tokenizer = AutoTokenizer.from_pretrained(model_name)
+        _finbert_model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        _finbert_model.eval()
+        logger.info('finbert_loaded')
+    return _finbert_tokenizer, _finbert_model
+
 
 class SentimentFactor(FactorBase):
     """F03 — Sentiment Score (weight: 0.15).
@@ -217,15 +236,12 @@ class SentimentFactor(FactorBase):
 
         Returns list of sentiment scores in [0, 1].
         Batch size = 32 for CPU efficiency.
+        Uses a module-level singleton so the ~100 MB model is loaded once.
         """
         try:
             import torch
-            from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-            model_name = 'ProsusAI/finbert'
-            tokenizer = AutoTokenizer.from_pretrained(model_name)
-            model = AutoModelForSequenceClassification.from_pretrained(model_name)
-            model.eval()
+            tokenizer, model = _get_finbert()
 
             scores = []
             batch_size = 32

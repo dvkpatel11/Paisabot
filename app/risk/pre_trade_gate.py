@@ -171,18 +171,18 @@ class PreTradeGate:
         if self._liquidity.is_shocked(symbol):
             return 'liquidity_shock_active'
 
-        # Position concentration check
+        # Position concentration check — enforce limit exactly, no hidden tolerance.
         max_pos = self._get_float('portfolio', 'max_position_size', 0.05)
         order_weight = notional / portfolio_value if portfolio_value > 0 else 0
         new_weight = current_weights.get(symbol, 0.0) + order_weight
-        if new_weight > max_pos * 1.1:  # 10% tolerance for rounding
+        if new_weight > max_pos:
             return f'position_limit {new_weight:.2%} > {max_pos:.2%}'
 
-        # Sector concentration check
+        # Sector concentration check — enforce limit exactly.
         max_sector = self._get_float('portfolio', 'max_sector_exposure', 0.25)
         sector = sector_map.get(symbol, 'Unknown')
         new_sector_exp = current_sectors.get(sector, 0.0) + order_weight
-        if new_sector_exp > max_sector * 1.1:
+        if new_sector_exp > max_sector:
             return f'sector_limit {sector} {new_sector_exp:.2%} > {max_sector:.2%}'
 
         # Min order size

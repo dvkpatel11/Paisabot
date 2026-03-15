@@ -1,20 +1,43 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import structlog
 
 logger = structlog.get_logger()
 
+_ET = ZoneInfo('America/New_York')
+_MARKET_CLOSE_HOUR = 16  # 4:00 PM ET
+_MIN_TTL = 300           # never set TTL below 5 minutes
+
+
+def _seconds_until_next_market_close() -> int:
+    """Compute seconds from now until the next 4:00 PM ET market close.
+
+    If the current ET time is before 4:00 PM, the TTL targets today's close.
+    If it is at or after 4:00 PM, the TTL targets tomorrow's close.
+    This ensures shock flags naturally expire at the session boundary rather
+    than a fixed 24h window that would bleed into the following trading day.
+    """
+    now_et = datetime.now(_ET)
+    close_today = now_et.replace(
+        hour=_MARKET_CLOSE_HOUR, minute=0, second=0, microsecond=0,
+    )
+    if now_et >= close_today:
+        close_today += timedelta(days=1)
+    delta = int((close_today - now_et).total_seconds())
+    return max(delta, _MIN_TTL)
+
 
 class LiquidityMonitor:
     """Detect liquidity shocks — ADV drops > 50% vs 30-day average.
 
-    Suspends new entries for affected ETFs for the trading session (24h TTL).
+    Suspends new entries for affected ETFs until the next market close (4:00 PM ET).
+    Using a flat 24h TTL would block the entire following trading session when a
+    shock is detected near market close; expiring at the session boundary avoids that.
     """
-
-    SHOCK_TTL = 86400  # 24 hours
 
     def __init__(self, redis_client, config_loader=None):
         self._redis = redis_client
@@ -138,7 +161,8 @@ class LiquidityMonitor:
 
     def _set_shock_flag(self, symbol: str) -> None:
         if self._redis is not None:
-            self._redis.set(f'liquidity_shock:{symbol}', '1', ex=self.SHOCK_TTL)
+            ttl = _seconds_until_next_market_close()
+            self._redis.set(f'liquidity_shock:{symbol}', '1', ex=ttl)
 
     def _get_historical_adv(self, symbol: str) -> float | None:
         if self._redis is None:

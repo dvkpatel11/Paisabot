@@ -129,6 +129,28 @@ document.addEventListener('DOMContentLoaded', function() {
       PaisaCharts.heatmap('heatmap-chart', {z, x: symbols, y: factors, title: 'Factor Scores (0-1)'});
     });
   });
+
+  // Live signal panel updates — re-classify into Long/Neutral/Avoid without a page reload
+  PaisaSocket.on('signals', function(data) {
+    // data is either {long:[], neutral:[], avoid:[]} or a flat {symbol: {signal_type, ...}} dict
+    if (data.long !== undefined) {
+      PaisaTables.setData('long-signals',    data.long    || []);
+      PaisaTables.setData('neutral-signals', data.neutral || []);
+      PaisaTables.setData('avoid-signals',   data.avoid   || []);
+    } else {
+      // Flat dict from publisher — sort client-side
+      const long = [], neutral = [], avoid = [];
+      Object.entries(data).forEach(([sym, s]) => {
+        const row = {symbol: sym, composite_score: s.composite_score, regime: s.regime};
+        if (s.signal_type === 'long')         long.push(row);
+        else if (s.signal_type === 'avoid')   avoid.push(row);
+        else                                  neutral.push(row);
+      });
+      PaisaTables.setData('long-signals',    long);
+      PaisaTables.setData('neutral-signals', neutral);
+      PaisaTables.setData('avoid-signals',   avoid);
+    }
+  });
 });
 
 function triggerCompute() {

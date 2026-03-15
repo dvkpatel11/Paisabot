@@ -4,6 +4,24 @@ Loads historical price_bars, computes simplified factor proxies at each
 rebalance date using only lookback data (no look-ahead bias), ranks the
 universe by composite score with configurable weights, and tracks portfolio
 returns with transaction cost modelling.
+
+.. warning:: **Factor proxy limitation — do not use for weight optimisation**
+
+    The factor proxies computed here (price-only momentum, realized vol, etc.)
+    are *gross approximations* of the production factor pipeline.  Production
+    factors are cross-sectionally percentile-ranked across the full universe
+    using FinBERT-derived sentiment, breadth data, and options-derived
+    dispersion — none of which are available to this backtester.
+
+    Consequences:
+    - Composite scores computed here will diverge from live scores.
+    - Walk-forward results from this backtester **cannot** be used to tune
+      production factor weights (DEFAULT_WEIGHTS in composite_scorer.py).
+    - Use this backtester only for coarse regime/rebalance-frequency studies
+      or for verifying that the execution and position-tracking logic is correct.
+
+    For rigorous weight optimisation, run the full factor pipeline in
+    ``research`` mode against a historical replay feed.
 """
 from __future__ import annotations
 
@@ -39,6 +57,14 @@ class VectorizedBacktester:
       5. Tracks portfolio returns net of slippage
     """
 
+    # Almgren-Chriss constants (same as SlippageTracker)
+    _AC_LAMBDA = 0.001  # temporary impact coefficient
+    _AC_GAMMA = 0.5     # permanent impact coefficient
+    _AC_SLIPPAGE_CAP_BPS = 50
+
+    # Default ADV for ETFs when not found in universe table (~$50M/day)
+    _DEFAULT_ADV_USD = 50_000_000
+
     def __init__(
         self,
         db_session,
@@ -53,15 +79,20 @@ class VectorizedBacktester:
         self.initial_capital = initial_capital
         self.rebalance_freq = rebalance_freq
         self.max_positions = max_positions
-        self.slippage_bps = slippage_bps
+        self.slippage_bps = slippage_bps  # fallback when ADV unavailable
 
         # Normalize weights
         total = sum(self.weights.values())
         if total > 0:
             self.weights = {k: v / total for k, v in self.weights.items()}
 
+        # ETF metadata (populated lazily at first run() call)
+        self._adv_usd: dict[str, float] = {}
+        self._inception_dates: dict[str, date] = {}
+
     def run(self, start_date: date, end_date: date, symbols: list[str] | None = None) -> BacktestResult:
         """Run backtest over the given date range."""
+        self._load_etf_metadata()
         prices = self._load_prices(start_date, end_date, symbols)
         if prices.empty or len(prices) < 20:
             return self._empty_result()
@@ -79,8 +110,36 @@ class VectorizedBacktester:
         current_weights = {}
         trade_log = []
 
+        # pending_weights holds weights computed from T-close signals that will
+        # be applied at T+1 open — matching production's T-close → T+1 execution.
+        pending_weights: dict[str, float] | None = None
+
         for i, dt in enumerate(trading_dates):
-            # Apply returns
+            # Apply any T+1 weight transition at the start of the day
+            if pending_weights is not None:
+                # Slippage cost is incurred at T+1 (execution day).
+                # Use Almgren-Chriss per-symbol estimate where ADV data is
+                # available; fall back to the flat slippage_bps otherwise.
+                cost_fraction = self._estimate_transition_cost(
+                    current_weights, pending_weights, portfolio_value, prices, i,
+                )
+                portfolio_value *= (1 - cost_fraction)
+                # Log trades with the execution date (T+1)
+                for sym in set(list(current_weights.keys()) + list(pending_weights.keys())):
+                    old_w = current_weights.get(sym, 0)
+                    new_w = pending_weights.get(sym, 0)
+                    if abs(new_w - old_w) > 0.001:
+                        trade_log.append({
+                            'date': dt.isoformat(),
+                            'symbol': sym,
+                            'side': 'buy' if new_w > old_w else 'sell',
+                            'old_weight': round(old_w, 4),
+                            'new_weight': round(new_w, 4),
+                        })
+                current_weights = pending_weights
+                pending_weights = None
+
+            # Apply today's returns with current (already-settled) weights
             if current_weights and i > 0:
                 day_return = sum(
                     w * returns.loc[dt, sym]
@@ -91,7 +150,7 @@ class VectorizedBacktester:
 
             equity[dt] = portfolio_value
 
-            # Rebalance
+            # Compute signals at T-close; weights will be applied tomorrow (T+1)
             if dt in rebalance_dates:
                 lookback_end = i
                 lookback_start = max(0, i - 60)
@@ -103,34 +162,10 @@ class VectorizedBacktester:
                 ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
                 top_n = ranked[:self.max_positions]
 
-                # Equal weight
-                new_weights = {}
+                # Equal weight — stored as pending until next bar
                 if top_n:
                     w = 1.0 / len(top_n)
-                    for sym, score in top_n:
-                        new_weights[sym] = w
-
-                # Slippage cost on turnover
-                turnover = self._calc_turnover(current_weights, new_weights)
-                cost = turnover * self.slippage_bps / 10_000
-                portfolio_value *= (1 - cost)
-                equity[dt] = portfolio_value
-
-                # Log trades
-                for sym in set(list(current_weights.keys()) + list(new_weights.keys())):
-                    old_w = current_weights.get(sym, 0)
-                    new_w = new_weights.get(sym, 0)
-                    if abs(new_w - old_w) > 0.001:
-                        trade_log.append({
-                            'date': dt.isoformat(),
-                            'symbol': sym,
-                            'side': 'buy' if new_w > old_w else 'sell',
-                            'old_weight': round(old_w, 4),
-                            'new_weight': round(new_w, 4),
-                            'score': round(scores.get(sym, 0), 4),
-                        })
-
-                current_weights = new_weights
+                    pending_weights = {sym: w for sym, _score in top_n}
 
         if equity.empty:
             return self._empty_result()
@@ -160,6 +195,13 @@ class VectorizedBacktester:
         """Compute simplified factor proxies from price data only.
 
         Uses only the lookback window provided (no look-ahead).
+
+        .. warning:: These are **price-only proxies** — not the production factors.
+            Sentiment uses raw momentum instead of FinBERT; breadth uses per-ETF
+            return positivity instead of market-breadth indicators; dispersion uses
+            cross-sectional return std instead of intra-ETF dispersion; liquidity is
+            hard-coded to 0.8 because ADV time-series are not stored per bar.
+            Scores produced here are NOT comparable to live composite scores.
         """
         if len(prices) < 5:
             return {s: 0.5 for s in symbols}
@@ -225,16 +267,119 @@ class VectorizedBacktester:
 
     # ── helpers ──────────────────────────────────────────────────
 
+    def _load_etf_metadata(self) -> None:
+        """Load ADV and inception dates from ETFUniverse (once per run)."""
+        if self._adv_usd and self._inception_dates:
+            return  # already loaded
+        from app.models.etf_universe import ETFUniverse
+        etfs = ETFUniverse.query.filter_by(is_active=True).all()
+        for e in etfs:
+            if e.avg_daily_vol_m is not None:
+                self._adv_usd[e.symbol] = float(e.avg_daily_vol_m) * 1_000_000
+            if e.inception_date is not None:
+                self._inception_dates[e.symbol] = e.inception_date
+
+    def _estimate_transition_cost(
+        self,
+        old_weights: dict[str, float],
+        new_weights: dict[str, float],
+        portfolio_value: float,
+        prices: pd.DataFrame,
+        price_idx: int,
+    ) -> float:
+        """Estimate total transaction cost as a fraction of portfolio value.
+
+        Uses Almgren-Chriss temporary + permanent impact where per-symbol ADV is
+        available; falls back to flat ``self.slippage_bps`` otherwise.
+        """
+        all_syms = set(list(old_weights.keys()) + list(new_weights.keys()))
+        total_cost_usd = 0.0
+        flat_turnover = 0.0
+        flat_symbols = []
+
+        current_row = prices.iloc[price_idx]
+
+        for sym in all_syms:
+            delta = abs(new_weights.get(sym, 0) - old_weights.get(sym, 0))
+            if delta < 1e-6:
+                continue
+            notional = portfolio_value * delta / 2  # one-way notional
+
+            adv = self._adv_usd.get(sym)
+            if adv is None or adv <= 0:
+                # Symbol not in universe metadata — accumulate for flat fallback
+                flat_turnover += delta / 2
+                flat_symbols.append(sym)
+                continue
+
+            mid = current_row.get(sym, 0.0) if hasattr(current_row, 'get') else 0.0
+            if mid <= 0:
+                mid = float(current_row[sym]) if sym in current_row.index else 0.0
+            if mid <= 0:
+                flat_turnover += delta / 2
+                continue
+
+            # Realized vol from lookback window (annualised)
+            lookback = max(0, price_idx - 20)
+            col = prices[sym].iloc[lookback:price_idx + 1].dropna() if sym in prices.columns else pd.Series()
+            vol = float(col.pct_change().dropna().std() * math.sqrt(252)) if len(col) > 2 else 0.20
+
+            # Almgren-Chriss impact (bps)
+            exec_min = 30
+            minute_volume = adv / 390
+            participation = (notional / max(minute_volume, 1)) / exec_min
+            temp_impact = self._AC_LAMBDA * vol * math.sqrt(abs(participation))
+            perm_impact = self._AC_GAMMA * vol * participation
+            bps = min((temp_impact + perm_impact) * 10_000, self._AC_SLIPPAGE_CAP_BPS)
+
+            total_cost_usd += notional * bps / 10_000
+
+        # Add flat-rate cost for symbols without ADV data
+        if flat_turnover > 0:
+            total_cost_usd += portfolio_value * flat_turnover * self.slippage_bps / 10_000
+
+        return total_cost_usd / portfolio_value if portfolio_value > 0 else 0.0
+
     def _load_prices(
         self, start_date: date, end_date: date, symbols: list[str] | None,
     ) -> pd.DataFrame:
-        """Load daily close prices from price_bars table."""
+        """Load daily close prices from price_bars table.
+
+        Symbols are filtered to those with inception_date <= start_date to
+        prevent look-ahead survivorship bias — ETFs that were not yet trading
+        at the backtest start must be excluded.
+
+        Note: price_bars contains only actual trading days (no weekend/holiday
+        rows), so the resulting DataFrame index already reflects the real NYSE
+        calendar and no further calendar filtering is needed.
+        """
         from app.models.price_bars import PriceBar
         from app.models.etf_universe import ETFUniverse
 
         if symbols is None:
             etfs = ETFUniverse.query.filter_by(is_active=True).all()
             symbols = [e.symbol for e in etfs]
+
+        # Filter out ETFs that were not yet trading at backtest start.
+        # An ETF with inception_date > start_date would have no pre-start price
+        # history, and including it biases selection toward "new" outperformers.
+        eligible_symbols = []
+        for sym in symbols:
+            inception = self._inception_dates.get(sym)
+            if inception is None:
+                # No inception date recorded — include conservatively; the DB
+                # query below will simply return no bars if there is no data.
+                eligible_symbols.append(sym)
+            elif inception <= start_date:
+                eligible_symbols.append(sym)
+            else:
+                logger.debug(
+                    'backtester_symbol_excluded_inception',
+                    symbol=sym,
+                    inception_date=str(inception),
+                    backtest_start=str(start_date),
+                )
+        symbols = eligible_symbols
 
         # Need lookback before start_date for factor computation
         lookback_start = start_date - timedelta(days=90)
@@ -264,17 +409,25 @@ class VectorizedBacktester:
         return pivot
 
     def _get_rebalance_dates(self, dates: list) -> set:
-        """Determine rebalance dates based on frequency."""
+        """Determine rebalance dates based on frequency.
+
+        Uses the first trading day of each ISO week or calendar month.
+        Because ``dates`` is derived directly from the ``price_bars`` table —
+        which only contains actual NYSE trading days — no separate holiday
+        calendar is needed: the week/month boundary detection naturally picks
+        the first *real* trading day of each period.
+        """
         if not dates:
             return set()
 
-        rebalance = set()
         if self.rebalance_freq == 'daily':
             return set(dates)
 
+        rebalance = set()
         prev_marker = None
         for dt in dates:
             if self.rebalance_freq == 'weekly':
+                # ISO week number — changes on the first trading day of each week
                 marker = dt.isocalendar()[1]
             elif self.rebalance_freq == 'monthly':
                 marker = dt.month if hasattr(dt, 'month') else dt.to_pydatetime().month
@@ -310,7 +463,10 @@ class VectorizedBacktester:
 
         mean_ret = daily_returns.mean()
         std_ret = daily_returns.std()
-        sharpe = (mean_ret / std_ret * np.sqrt(252)) if std_ret > 0 else 0
+        # Subtract risk-free rate (annualised) before computing Sharpe.
+        # Using 4.5% as a conservative current-rate proxy; divide by 252 for daily.
+        risk_free_daily = 0.045 / 252
+        sharpe = ((mean_ret - risk_free_daily) / std_ret * np.sqrt(252)) if std_ret > 0 else 0
 
         max_dd = drawdown.min()
 

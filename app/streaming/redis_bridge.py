@@ -9,6 +9,7 @@ logger = structlog.get_logger()
 
 # Maps Redis channel → SocketIO event name
 CHANNEL_EVENT_MAP = {
+    'channel:bars': 'price_update',       # real-time price ticks → universe table
     'channel:factor_scores': 'factor_scores',
     'channel:signals': 'signals',
     'channel:portfolio': 'portfolio',
