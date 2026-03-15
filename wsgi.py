@@ -1,10 +1,12 @@
 import eventlet
+
 eventlet.monkey_patch()
 
 from app import create_app
 
 app = create_app()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     from app.extensions import socketio
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+
+    socketio.run(app, debug=True, host="0.0.0.0", port=5000)

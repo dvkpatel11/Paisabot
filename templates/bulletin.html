@@ -1,14 +1,11 @@
-{% extends "base.html" %}
-{% block title %}Bulletin - Paisabot{% endblock %}
-
-{% block content %}
+{% extends "base.html" %} {% block title %}Bulletin - Paisabot{% endblock %} {% block content %}
 <div class="page-header">
   <h1>Data Bulletin</h1>
-  <span class="text-muted" style="font-size:13px">Live data from all connected sources</span>
+  <span class="text-muted" style="font-size: 13px">Live data from all connected sources</span>
 </div>
 
 <!-- Data Source Status -->
-<div class="grid grid-4" style="margin-bottom:16px">
+<div class="grid grid-4" style="margin-bottom: 16px">
   <div class="panel stat-card" id="src-alpaca">
     <div class="stat-label">Alpaca</div>
     <div class="stat-value" id="src-alpaca-status">--</div>
@@ -32,7 +29,7 @@
 </div>
 
 <!-- Latest Prices -->
-<div class="panel panel-full" style="margin-bottom:16px">
+<div class="panel panel-full" style="margin-bottom: 16px">
   <div class="panel-header">
     <h2>Latest Prices</h2>
     <button class="btn btn-sm" onclick="loadPrices()">Refresh</button>
@@ -41,16 +38,16 @@
 </div>
 
 <!-- Factor Scores Snapshot -->
-<div class="panel panel-full" style="margin-bottom:16px">
+<div class="panel panel-full" style="margin-bottom: 16px">
   <div class="panel-header">
     <h2>Latest Factor Scores</h2>
-    <span class="text-muted" style="font-size:12px" id="factor-ts"></span>
+    <span class="text-muted" style="font-size: 12px" id="factor-ts"></span>
   </div>
   <div id="factor-table"></div>
 </div>
 
 <!-- Signal Classifications -->
-<div class="panel panel-full" style="margin-bottom:16px">
+<div class="panel panel-full" style="margin-bottom: 16px">
   <div class="panel-header">
     <h2>Current Signals</h2>
   </div>
@@ -66,15 +63,30 @@
 </div>
 
 <style>
-.stat-card { text-align:center; padding:16px; }
-.stat-label { font-size:12px; color:var(--text-muted); margin-bottom:4px; }
-.stat-value { font-size:20px; font-weight:700; font-family:'JetBrains Mono',monospace; }
-.stat-sub { font-size:11px; margin-top:4px; }
-.btn-sm { padding:4px 10px; font-size:11px; }
+  .stat-card {
+    text-align: center;
+    padding: 16px;
+  }
+  .stat-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+  .stat-value {
+    font-size: 20px;
+    font-weight: 700;
+    font-family: "JetBrains Mono", monospace;
+  }
+  .stat-sub {
+    font-size: 11px;
+    margin-top: 4px;
+  }
+  .btn-sm {
+    padding: 4px 10px;
+    font-size: 11px;
+  }
 </style>
-{% endblock %}
-
-{% block scripts %}
+{% endblock %} {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
   checkSources();
@@ -157,26 +169,49 @@ function checkSources() {
   }).catch(() => {});
 }
 
-function loadPrices() {
-  fetch('/api/data/status').then(r => r.json()).then(data => {
-    const cols = [
-      {title: 'Symbol', field: 'symbol', width: 80},
-      {title: 'Bars', field: 'count', width: 70, hozAlign: 'right'},
-      {title: 'Earliest', field: 'earliest', width: 110},
-      {title: 'Latest', field: 'latest', width: 110},
-    ];
+        // DB
+        const db = data.database || {};
+        const dEl = document.getElementById("src-db-status");
+        dEl.textContent = db.connected ? "OK" : "DOWN";
+        dEl.style.color = db.connected ? "var(--green)" : "var(--red)";
+        document.getElementById("src-db-detail").textContent = db.bar_count ? db.bar_count + " bars" : "";
+      })
+      .catch(() => {
+        ["src-alpaca-status", "src-redis-status", "src-db-status"].forEach((id) => {
+          document.getElementById(id).textContent = "?";
+        });
+      });
 
-    const rows = Object.entries(data.bars || {}).map(([sym, info]) => ({
-      symbol: sym,
-      count: info.count,
-      earliest: (info.earliest || '').slice(0, 10),
-      latest: (info.latest || '').slice(0, 10),
-    })).sort((a, b) => a.symbol.localeCompare(b.symbol));
+    // VIX — just check data status
+    fetch("/api/data/status")
+      .then((r) => r.json())
+      .then((data) => {
+        const vEl = document.getElementById("src-vix-status");
+        const bars = data.bars || {};
+        if (bars["VIX"] || bars["^VIX"]) {
+          vEl.textContent = "OK";
+          vEl.style.color = "var(--green)";
+          const vix = bars["VIX"] || bars["^VIX"];
+          document.getElementById("src-vix-detail").textContent =
+            vix.count + " bars, latest " + (vix.latest || "").slice(0, 10);
+        } else {
+          vEl.textContent = "N/A";
+          vEl.style.color = "var(--text-muted)";
+          document.getElementById("src-vix-detail").textContent = "No VIX data loaded";
+        }
+      });
+  }
 
-    PaisaTables.create('prices-table', cols);
-    PaisaTables.setData('prices-table', rows);
-  });
-}
+  function loadPrices() {
+    fetch("/api/data/status")
+      .then((r) => r.json())
+      .then((data) => {
+        const cols = [
+          { title: "Symbol", field: "symbol", width: 80 },
+          { title: "Bars", field: "count", width: 70, hozAlign: "right" },
+          { title: "Earliest", field: "earliest", width: 110 },
+          { title: "Latest", field: "latest", width: 110 },
+        ];
 
 function loadFactors() {
   fetch('/api/scores').then(r => r.json()).then(scores => {
@@ -187,85 +222,126 @@ function loadFactors() {
       return;
     }
 
-    const factors = ['trend', 'volatility', 'sentiment', 'breadth', 'dispersion', 'correlation', 'liquidity', 'slippage'];
-    const cols = [
-      {title: 'Symbol', field: 'symbol', width: 80},
-      ...factors.map(f => ({
-        title: f.charAt(0).toUpperCase() + f.slice(1),
-        field: f,
-        width: 90,
-        hozAlign: 'right',
-        formatter: function(cell) {
-          const v = cell.getValue();
-          if (v === null || v === undefined) return '--';
-          const pct = Math.round(v * 100);
-          const color = v >= 0.7 ? 'var(--green)' : v >= 0.4 ? 'var(--yellow)' : 'var(--red)';
-          return '<span style="color:' + color + '">' + (v).toFixed(3) + '</span>';
-        },
-      })),
-    ];
+        PaisaTables.create("prices-table", cols);
+        PaisaTables.setData("prices-table", rows);
+      });
+  }
 
-    const rows = symbols.map(s => ({symbol: s, ...scores[s]}));
-    PaisaTables.create('factor-table', cols);
-    PaisaTables.setData('factor-table', rows);
-  });
-}
+  function loadFactors() {
+    fetch("/api/scores")
+      .then((r) => r.json())
+      .then((scores) => {
+        const symbols = Object.keys(scores).sort();
+        if (symbols.length === 0) {
+          document.getElementById("factor-table").innerHTML =
+            '<div style="padding:20px;color:var(--text-muted);font-size:13px">No factor scores computed yet. Use Pipelines > Compute Factors.</div>';
+          return;
+        }
 
-function loadSignals() {
-  fetch('/api/signals').then(r => r.json()).then(data => {
-    const all = [
-      ...(data.long || []).map(s => ({...s, class: 'LONG'})),
-      ...(data.neutral || []).map(s => ({...s, class: 'NEUTRAL'})),
-      ...(data.avoid || []).map(s => ({...s, class: 'AVOID'})),
-    ];
-    all.sort((a, b) => b.composite_score - a.composite_score);
+        const factors = [
+          "trend",
+          "volatility",
+          "sentiment",
+          "breadth",
+          "dispersion",
+          "correlation",
+          "liquidity",
+          "slippage",
+        ];
+        const cols = [
+          { title: "Symbol", field: "symbol", width: 80 },
+          ...factors.map((f) => ({
+            title: f.charAt(0).toUpperCase() + f.slice(1),
+            field: f,
+            width: 90,
+            hozAlign: "right",
+            formatter: function (cell) {
+              const v = cell.getValue();
+              if (v === null || v === undefined) return "--";
+              const pct = Math.round(v * 100);
+              const color = v >= 0.7 ? "var(--green)" : v >= 0.4 ? "var(--yellow)" : "var(--red)";
+              return '<span style="color:' + color + '">' + v.toFixed(3) + "</span>";
+            },
+          })),
+        ];
 
-    if (all.length === 0) {
-      document.getElementById('signal-table').innerHTML =
-        '<div style="padding:20px;color:var(--text-muted);font-size:13px">No signals generated yet.</div>';
-      return;
-    }
+        const rows = symbols.map((s) => ({ symbol: s, ...scores[s] }));
+        PaisaTables.create("factor-table", cols);
+        PaisaTables.setData("factor-table", rows);
+      });
+  }
 
-    const cols = [
-      {title: 'Symbol', field: 'symbol', width: 80},
-      {title: 'Class', field: 'class', width: 80, formatter: function(cell) {
-        const v = cell.getValue();
-        const color = v === 'LONG' ? 'var(--green)' : v === 'AVOID' ? 'var(--red)' : 'var(--yellow)';
-        return '<span style="color:' + color + '">' + v + '</span>';
-      }},
-      {title: 'Score', field: 'composite_score', width: 80, hozAlign: 'right',
-        formatter: function(cell) { return (cell.getValue() || 0).toFixed(3); }},
-      {title: 'Regime', field: 'regime', width: 100},
-    ];
+  function loadSignals() {
+    fetch("/api/signals")
+      .then((r) => r.json())
+      .then((data) => {
+        const all = [
+          ...(data.long || []).map((s) => ({ ...s, class: "LONG" })),
+          ...(data.neutral || []).map((s) => ({ ...s, class: "NEUTRAL" })),
+          ...(data.avoid || []).map((s) => ({ ...s, class: "AVOID" })),
+        ];
+        all.sort((a, b) => b.composite_score - a.composite_score);
 
-    PaisaTables.create('signal-table', cols);
-    PaisaTables.setData('signal-table', all);
-  });
-}
+        if (all.length === 0) {
+          document.getElementById("signal-table").innerHTML =
+            '<div style="padding:20px;color:var(--text-muted);font-size:13px">No signals generated yet.</div>';
+          return;
+        }
 
-function loadTrades() {
-  fetch('/api/trades').then(r => r.json()).then(data => {
-    const trades = data.trades || data || [];
+        const cols = [
+          { title: "Symbol", field: "symbol", width: 80 },
+          {
+            title: "Class",
+            field: "class",
+            width: 80,
+            formatter: function (cell) {
+              const v = cell.getValue();
+              const color = v === "LONG" ? "var(--green)" : v === "AVOID" ? "var(--red)" : "var(--yellow)";
+              return '<span style="color:' + color + '">' + v + "</span>";
+            },
+          },
+          {
+            title: "Score",
+            field: "composite_score",
+            width: 80,
+            hozAlign: "right",
+            formatter: function (cell) {
+              return (cell.getValue() || 0).toFixed(3);
+            },
+          },
+          { title: "Regime", field: "regime", width: 100 },
+        ];
 
-    if (trades.length === 0) {
-      document.getElementById('trades-table').innerHTML =
-        '<div style="padding:20px;color:var(--text-muted);font-size:13px">No trades recorded yet.</div>';
-      return;
-    }
+        PaisaTables.create("signal-table", cols);
+        PaisaTables.setData("signal-table", all);
+      });
+  }
 
-    const cols = [
-      {title: 'Time', field: 'trade_time', width: 140},
-      {title: 'Symbol', field: 'symbol', width: 70},
-      {title: 'Side', field: 'side', width: 50},
-      {title: 'Status', field: 'status', width: 80},
-      {title: 'Notional', field: 'requested_notional', width: 90, hozAlign: 'right'},
-      {title: 'Fill Price', field: 'fill_price', width: 90, hozAlign: 'right'},
-      {title: 'Broker', field: 'broker', width: 80},
-    ];
+  function loadTrades() {
+    fetch("/api/trades")
+      .then((r) => r.json())
+      .then((data) => {
+        const trades = data.trades || data || [];
 
-    PaisaTables.create('trades-table', cols);
-    PaisaTables.setData('trades-table', trades);
-  });
-}
+        if (trades.length === 0) {
+          document.getElementById("trades-table").innerHTML =
+            '<div style="padding:20px;color:var(--text-muted);font-size:13px">No trades recorded yet.</div>';
+          return;
+        }
+
+        const cols = [
+          { title: "Time", field: "trade_time", width: 140 },
+          { title: "Symbol", field: "symbol", width: 70 },
+          { title: "Side", field: "side", width: 50 },
+          { title: "Status", field: "status", width: 80 },
+          { title: "Notional", field: "requested_notional", width: 90, hozAlign: "right" },
+          { title: "Fill Price", field: "fill_price", width: 90, hozAlign: "right" },
+          { title: "Broker", field: "broker", width: 80 },
+        ];
+
+        PaisaTables.create("trades-table", cols);
+        PaisaTables.setData("trades-table", trades);
+      });
+  }
 </script>
 {% endblock %}
