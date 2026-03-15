@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from flask import jsonify, request
 
 from app.api import api_bp
+from app.auth import api_login_required
 from app.extensions import db, redis_client
 
 
@@ -287,7 +288,7 @@ def get_risk():
     kill_switches = {}
     for switch in ('trading', 'rebalance', 'all', 'force_liquidate'):
         val = redis_client.get(f'kill_switch:{switch}')
-        kill_switches[switch] = val == b'1'
+        kill_switches[switch] = val == '1'
 
     risk_data['kill_switches'] = kill_switches
 
@@ -350,6 +351,7 @@ def get_trades():
 
 
 @api_bp.route('/trades/manual', methods=['POST'])
+@api_login_required
 def submit_manual_trade():
     """Submit a manual trade entry.
 
@@ -485,12 +487,16 @@ def get_all_config():
         SystemConfig.category, SystemConfig.key,
     ).all()
 
+    from app.utils.encryption import mask_secret
+
     result = {}
     for r in rows:
         if r.category not in result:
             result[r.category] = {}
+        display_value = mask_secret(r.value) if r.is_secret else r.value
         result[r.category][r.key] = {
-            'value': r.value,
+            'value': display_value,
+            'is_secret': r.is_secret,
             'type': r.value_type,
             'description': r.description,
             'updated_at': r.updated_at.isoformat() if r.updated_at else None,
@@ -504,12 +510,16 @@ def get_all_config():
 def get_config_category(category: str):
     """Get config for a single category."""
     from app.models.system_config import SystemConfig
+    from app.utils.encryption import mask_secret
+
     rows = SystemConfig.query.filter_by(category=category).all()
 
     result = {}
     for r in rows:
+        display_value = mask_secret(r.value) if r.is_secret else r.value
         result[r.key] = {
-            'value': r.value,
+            'value': display_value,
+            'is_secret': r.is_secret,
             'type': r.value_type,
             'description': r.description,
         }
@@ -518,20 +528,28 @@ def get_config_category(category: str):
 
 
 @api_bp.route('/config/<category>', methods=['PATCH'])
+@api_login_required
 def update_config(category: str):
     """Update config keys within a category.
 
     Body: {key: value, ...}
     Writes to PostgreSQL + syncs to Redis.
+    Secrets (api_key, secret) are Fernet-encrypted before storage.
     """
+    import os
     from app.models.system_config import SystemConfig
+    from app.utils.encryption import encrypt_value, mask_secret
 
     data = request.get_json()
     if not data:
         return jsonify({'error': 'no data'}), 400
 
+    fernet_key = os.environ.get('FERNET_KEY', '')
     updated_by = request.headers.get('X-Updated-By', 'api')
     changes = []
+
+    # Keys that should be encrypted at rest
+    SECRET_PATTERNS = ('api_key', 'secret', 'password', 'token')
 
     for key, value in data.items():
         row = SystemConfig.query.filter_by(
@@ -539,27 +557,39 @@ def update_config(category: str):
         ).first()
 
         old_value = row.value if row else None
+        is_secret = any(pat in key.lower() for pat in SECRET_PATTERNS)
+        store_value = str(value)
+
+        # Encrypt secrets before storing in DB
+        if is_secret and fernet_key and store_value:
+            store_value = encrypt_value(store_value, fernet_key)
 
         if row:
-            row.value = str(value)
+            row.value = store_value
+            row.is_secret = is_secret
             row.updated_by = updated_by
         else:
             row = SystemConfig(
                 category=category,
                 key=key,
-                value=str(value),
+                value=store_value,
+                is_secret=is_secret,
                 updated_by=updated_by,
             )
             db.session.add(row)
 
-        # Sync to Redis
+        # Sync plaintext to Redis (in-memory, not persisted to disk)
         redis_client.hset(f'config:{category}', key, str(value))
+
+        # Mask secrets in the response
+        display_old = mask_secret(old_value) if is_secret and old_value else old_value
+        display_new = mask_secret(str(value)) if is_secret else str(value)
 
         changes.append({
             'category': category,
             'key': key,
-            'old_value': old_value,
-            'new_value': str(value),
+            'old_value': display_old,
+            'new_value': display_new,
             'updated_by': updated_by,
         })
 
@@ -574,6 +604,7 @@ def update_config(category: str):
 
 
 @api_bp.route('/config/weights', methods=['PATCH'])
+@api_login_required
 def update_weights():
     """Update factor weights with validation (must sum to 1.0)."""
     data = request.get_json()
@@ -611,6 +642,7 @@ def update_weights():
 
 
 @api_bp.route('/config/mode', methods=['PATCH'])
+@api_login_required
 def update_mode():
     """Change operational mode with transition guards."""
     data = request.get_json()
@@ -622,7 +654,7 @@ def update_mode():
 
     # Get current mode
     current = redis_client.hget('config:system', 'operational_mode')
-    current = current.decode() if isinstance(current, bytes) else current
+    current = current or 'simulation'
 
     # Guard: live→simulation sets kill switch
     if current == 'live' and mode == 'simulation':
@@ -688,6 +720,7 @@ def get_config_audit():
 # ── control ────────────────────────────────────────────────────────
 
 @api_bp.route('/control/<switch>', methods=['PATCH'])
+@api_login_required
 def toggle_kill_switch(switch: str):
     """Toggle a kill switch on or off.
 
@@ -713,6 +746,7 @@ def toggle_kill_switch(switch: str):
 
 
 @api_bp.route('/control/force_liquidate', methods=['POST'])
+@api_login_required
 def force_liquidate():
     """Emergency liquidation of all positions.
 
@@ -938,7 +972,7 @@ def get_pipeline_status():
     kill_switches = {}
     for switch in ('trading', 'rebalance', 'all'):
         val = redis_client.get(f'kill_switch:{switch}')
-        kill_switches[switch] = val == b'1'
+        kill_switches[switch] = val == '1'
 
     # Operational mode
     mode = redis_client.hget('config:system', 'operational_mode')

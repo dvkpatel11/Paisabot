@@ -97,14 +97,15 @@ class PortfolioConstructor:
 
             ef = EfficientFrontier(mu, S)
 
-            # Position bounds
-            ef.add_constraint(lambda w: w <= constraints.max_position_size / investable)
-            ef.add_constraint(lambda w: w >= 0)
+            # Position bounds (EF weights sum to 1.0; investable scaling
+            # happens after optimisation, so constraints use raw fractions)
+            ef.add_constraint(lambda w: w <= constraints.max_position_size)
+            ef.add_constraint(lambda w: w >= constraints.min_position_size)
 
             # Sector constraints
             self._add_sector_constraints(
                 ef, candidates, sector_map,
-                constraints.max_sector_exposure / investable,
+                constraints.max_sector_exposure,
             )
 
             if objective == 'min_vol':

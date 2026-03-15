@@ -98,13 +98,13 @@ class CorrelationMonitor:
                     'correlation': round(float(corr_values[idx]), 4),
                 })
 
-        # Track consecutive breach days
+        # Track consecutive breach days (decrement gradually rather than
+        # hard-reset so near-consecutive breach days still accumulate)
         limit = self.correlation_limit
         if avg_corr > limit:
             breach_days = self._increment_breach_counter()
         else:
-            breach_days = 0
-            self._reset_breach_counter()
+            breach_days = self._decrement_breach_counter()
 
         # Determine status
         if breach_days >= self.consecutive_days_trigger:
@@ -134,6 +134,18 @@ class CorrelationMonitor:
         val = self._redis.incr(self.CONSECUTIVE_DAYS_KEY)
         self._redis.expire(self.CONSECUTIVE_DAYS_KEY, 86400 * 7)
         return int(val)
+
+    def _decrement_breach_counter(self) -> int:
+        """Decrement breach counter by 1 (min 0) instead of hard-resetting."""
+        if self._redis is None:
+            return 0
+        val = self._redis.get(self.CONSECUTIVE_DAYS_KEY)
+        current = int(val) if val else 0
+        if current <= 1:
+            self._redis.delete(self.CONSECUTIVE_DAYS_KEY)
+            return 0
+        self._redis.set(self.CONSECUTIVE_DAYS_KEY, str(current - 1), ex=86400 * 7)
+        return current - 1
 
     def _reset_breach_counter(self) -> None:
         if self._redis is not None:

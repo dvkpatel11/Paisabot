@@ -33,13 +33,20 @@ def create_app(config_name: str = 'development') -> Flask:
     import app.extensions as ext
     ext.redis_client = redis_lib.from_url(
         app.config['REDIS_URL'],
-        decode_responses=False,
+        decode_responses=True,
     )
+
+    # Flask-Login
+    from app.auth import login_manager
+    login_manager.init_app(app)
 
     # Structlog
     _configure_logging()
 
     # Register blueprints
+    from app.auth.views import auth_bp
+    app.register_blueprint(auth_bp)
+
     from app.api import api_bp
     app.register_blueprint(api_bp, url_prefix='/api')
 
