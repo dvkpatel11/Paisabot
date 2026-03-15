@@ -15,6 +15,7 @@ class FactorScore(db.Model):
     breadth_score = db.Column(db.Numeric(6, 4))
     liquidity_score = db.Column(db.Numeric(6, 4))
     slippage_score = db.Column(db.Numeric(6, 4))
+    composite_score = db.Column(db.Numeric(6, 4))   # weighted sum of component scores [0,1]
 
     __table_args__ = (
         db.Index('ix_factor_scores_sym_time', 'symbol', 'calc_time'),

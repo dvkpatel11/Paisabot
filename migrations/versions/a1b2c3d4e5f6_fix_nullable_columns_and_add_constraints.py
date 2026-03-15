@@ -55,7 +55,13 @@ def upgrade() -> None:
         'high >= low',
     )
 
-    # ── 4. CHECK constraints on factor_scores ────────────────────────────────
+    # ── 4a. Add composite_score column (missing from initial schema) ─────────
+    op.add_column(
+        'factor_scores',
+        sa.Column('composite_score', sa.Numeric(6, 4), nullable=True),
+    )
+
+    # ── 4b. CHECK constraints on factor_scores ───────────────────────────────
     # All component scores must be in [0, 1].
     score_cols = [
         'trend_score', 'volatility_score', 'sentiment_score',
@@ -92,6 +98,7 @@ def downgrade() -> None:
     op.drop_index('uq_signals_sym_time', table_name='signals')
     op.drop_index('uq_factor_scores_sym_time', table_name='factor_scores')
     op.drop_constraint('ck_factor_scores_range', 'factor_scores', type_='check')
+    op.drop_column('factor_scores', 'composite_score')
     op.drop_constraint('ck_price_bars_high_gte_low', 'price_bars', type_='check')
     op.drop_constraint('ck_price_bars_positive_prices', 'price_bars', type_='check')
 
