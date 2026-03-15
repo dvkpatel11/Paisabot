@@ -253,36 +253,85 @@ class OrderManager:
     # ── simulated fills (research mode) ────────────────────────────
 
     def _simulate_fill(self, order: dict, now: datetime) -> dict:
-        """Simulate a fill for research/backtesting mode."""
-        slippage_bps = self._get_config_float(
-            'execution', 'slippage_bps', 2.0,
-        )
-        spread_bps = self._get_config_float(
-            'universe', 'max_spread_bps', 1.0,
+        """Simulate a fill for research/backtesting mode.
+
+        Uses the Almgren-Chriss cost model via SlippageTracker rather than
+        a flat slippage constant, and computes a realistic fill price from
+        the mid price stored in Redis (or the order's reference price).
+        """
+        symbol = order['symbol']
+        side = order['side']
+        notional = order['notional']
+
+        # Fetch mid price: try Redis cache, then order metadata, then error
+        mid_price = self._get_cached_mid(symbol)
+        if mid_price is None:
+            mid_price = order.get('ref_price')
+        if mid_price is None or mid_price <= 0:
+            self._log.warning(
+                'simulate_fill_no_price',
+                symbol=symbol,
+                reason='no mid price available',
+            )
+            return self._result(
+                order, 'error', reason='no_price_for_simulation',
+                timestamp=now,
+            )
+
+        daily_volume = self._get_daily_volume(symbol)
+        volatility = self._get_volatility(symbol)
+        exec_window = self._get_exec_window()
+
+        impact_bps = self._slippage.estimate_pretrade(
+            notional, mid_price, daily_volume, volatility, exec_window,
         )
 
-        # Use notional directly — in research mode we don't have live quotes
-        impact_bps = slippage_bps + spread_bps / 2
+        # Add half-spread cost
+        spread_bps = self._get_config_float('universe', 'max_spread_bps', 1.0)
+        total_bps = impact_bps + spread_bps / 2
+
+        # Compute fill price (adverse direction)
+        direction = 1.0 if side == 'buy' else -1.0
+        fill_price = round(mid_price * (1 + direction * total_bps / 10_000), 4)
+        filled_qty = round(notional / fill_price, 6)
 
         result = self._result(
             order,
             status='filled',
             reason='simulated',
-            estimated_slippage_bps=impact_bps,
-            actual_slippage_bps=impact_bps,
+            fill_price=fill_price,
+            filled_qty=filled_qty,
+            filled_at=now.isoformat(),
+            mid_at_submission=mid_price,
+            estimated_slippage_bps=round(total_bps, 4),
+            actual_slippage_bps=round(total_bps, 4),
             timestamp=now,
         )
 
         self._publish_fill(result)
         self._log.info(
             'simulated_fill',
-            symbol=order['symbol'],
-            side=order['side'],
-            notional=order['notional'],
-            slippage_bps=impact_bps,
+            symbol=symbol,
+            side=side,
+            notional=notional,
+            fill_price=fill_price,
+            filled_qty=filled_qty,
+            slippage_bps=round(total_bps, 2),
         )
 
         return result
+
+    def _get_cached_mid(self, symbol: str) -> float | None:
+        """Fetch cached mid price from Redis."""
+        if self._redis is None:
+            return None
+        val = self._redis.hget('cache:mid_prices', symbol)
+        if val:
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return None
+        return None
 
     # ── config helpers ─────────────────────────────────────────────
 
@@ -291,7 +340,7 @@ class OrderManager:
             return False
         for switch in ('trading', 'all'):
             val = self._redis.get(f'kill_switch:{switch}')
-            if val == b'1' or val == '1':
+            if val == '1':
                 return True
         return False
 

@@ -175,7 +175,7 @@ def run_continuous_monitor(self):
                 redis_client.set('kill_switch:trading', '1')
                 logger.critical('risk_halt_triggered', results=results)
 
-            # 9. Process stop-loss exits
+            # 9. Process stop-loss exits (full liquidation)
             stop_exits = results.get('stop_loss', {}).get('exits', [])
             for exit_order in stop_exits:
                 redis_client.lpush(
@@ -187,6 +187,39 @@ def run_continuous_monitor(self):
                         'reason': 'stop_loss',
                     }),
                 )
+
+            # 9b. Process soft-stop reductions (50% position trim)
+            stop_reductions = results.get('stop_loss', {}).get('reductions', [])
+            for reduction in stop_reductions:
+                reduce_notional = float(reduction.get('notional', 0)) * 0.50
+                if reduce_notional > 0:
+                    redis_client.lpush(
+                        'channel:orders_approved',
+                        json.dumps({
+                            'symbol': reduction['symbol'],
+                            'side': 'sell',
+                            'notional': reduce_notional,
+                            'reason': 'soft_stop_reduction',
+                        }),
+                    )
+
+            # 9c. Process vol-scaling orders
+            vol_scaling = results.get('vol_scaling', {})
+            if vol_scaling.get('action') not in ('no_change', None):
+                scale = vol_scaling.get('scale_factor', 1.0)
+                for pos in positions_list:
+                    if pos.get('status') == 'open' and pos.get('notional', 0) > 0:
+                        trim_notional = pos['notional'] * (1.0 - scale)
+                        if trim_notional > 0:
+                            redis_client.lpush(
+                                'channel:orders_approved',
+                                json.dumps({
+                                    'symbol': pos['symbol'],
+                                    'side': 'sell',
+                                    'notional': round(trim_notional, 2),
+                                    'reason': vol_scaling['action'],
+                                }),
+                            )
 
             # 10. Cache risk state for dashboard
             redis_client.set(

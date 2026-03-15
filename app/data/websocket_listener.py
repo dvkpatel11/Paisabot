@@ -54,7 +54,7 @@ class AlpacaWebSocketListener:
         self._symbols = symbols
         self._stream = StockDataStream(self._api_key, self._secret_key)
 
-        async def on_bar(bar):
+        def on_bar(bar):
             self._handle_bar(bar)
 
         self._stream.subscribe_bars(on_bar, *symbols)
@@ -67,6 +67,20 @@ class AlpacaWebSocketListener:
         )
         self._thread.start()
         self._log.info('ws_started', symbols=len(symbols))
+
+    def add_symbol(self, symbol: str) -> None:
+        """Dynamically add a symbol to the live subscription."""
+        if symbol in self._symbols:
+            return
+        self._symbols.append(symbol)
+        if self._stream:
+            try:
+                def on_bar(bar):
+                    self._handle_bar(bar)
+                self._stream.subscribe_bars(on_bar, symbol)
+                self._log.info('ws_symbol_added', symbol=symbol)
+            except Exception as exc:
+                self._log.error('ws_symbol_add_failed', symbol=symbol, error=str(exc))
 
     def stop(self) -> None:
         """Stop the WebSocket connection."""
@@ -85,13 +99,45 @@ class AlpacaWebSocketListener:
         return self._running and self._thread is not None and self._thread.is_alive()
 
     def _run_stream(self) -> None:
-        """Run the blocking stream loop."""
-        try:
-            self._stream.run()
-        except Exception as exc:
-            self._log.error('ws_stream_error', error=str(exc))
-        finally:
-            self._running = False
+        """Run the blocking stream loop with exponential-backoff reconnection."""
+        import time
+
+        attempt = 0
+        max_backoff = 30
+
+        while self._running:
+            try:
+                self._log.info('ws_stream_connecting', attempt=attempt)
+                self._stream.run()
+            except Exception as exc:
+                if not self._running:
+                    break
+                wait = min(2 ** attempt, max_backoff)
+                self._log.error(
+                    'ws_stream_disconnected',
+                    error=str(exc),
+                    reconnect_in=wait,
+                    attempt=attempt,
+                )
+                time.sleep(wait)
+                attempt += 1
+
+                # Rebuild stream for reconnection
+                try:
+                    from alpaca.data.live import StockDataStream
+                    self._stream = StockDataStream(self._api_key, self._secret_key)
+
+                    def on_bar(bar):
+                        self._handle_bar(bar)
+
+                    self._stream.subscribe_bars(on_bar, *self._symbols)
+                except Exception as rebuild_exc:
+                    self._log.error('ws_stream_rebuild_failed', error=str(rebuild_exc))
+            else:
+                # Clean exit (no exception) — reset attempts
+                attempt = 0
+
+        self._running = False
 
     def _handle_bar(self, bar) -> None:
         """Process incoming bar: Redis cache + pub/sub."""

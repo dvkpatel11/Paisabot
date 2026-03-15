@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from flask import jsonify, request
 
 from app.api import api_bp
+from app.auth import api_login_required
 from app.extensions import db, redis_client
 
 
@@ -287,7 +288,7 @@ def get_risk():
     kill_switches = {}
     for switch in ('trading', 'rebalance', 'all', 'force_liquidate'):
         val = redis_client.get(f'kill_switch:{switch}')
-        kill_switches[switch] = val == b'1'
+        kill_switches[switch] = val == '1'
 
     risk_data['kill_switches'] = kill_switches
 
@@ -350,6 +351,7 @@ def get_trades():
 
 
 @api_bp.route('/trades/manual', methods=['POST'])
+@api_login_required
 def submit_manual_trade():
     """Submit a manual trade entry.
 
@@ -485,12 +487,16 @@ def get_all_config():
         SystemConfig.category, SystemConfig.key,
     ).all()
 
+    from app.utils.encryption import mask_secret
+
     result = {}
     for r in rows:
         if r.category not in result:
             result[r.category] = {}
+        display_value = mask_secret(r.value) if r.is_secret else r.value
         result[r.category][r.key] = {
-            'value': r.value,
+            'value': display_value,
+            'is_secret': r.is_secret,
             'type': r.value_type,
             'description': r.description,
             'updated_at': r.updated_at.isoformat() if r.updated_at else None,
@@ -504,12 +510,16 @@ def get_all_config():
 def get_config_category(category: str):
     """Get config for a single category."""
     from app.models.system_config import SystemConfig
+    from app.utils.encryption import mask_secret
+
     rows = SystemConfig.query.filter_by(category=category).all()
 
     result = {}
     for r in rows:
+        display_value = mask_secret(r.value) if r.is_secret else r.value
         result[r.key] = {
-            'value': r.value,
+            'value': display_value,
+            'is_secret': r.is_secret,
             'type': r.value_type,
             'description': r.description,
         }
@@ -518,20 +528,28 @@ def get_config_category(category: str):
 
 
 @api_bp.route('/config/<category>', methods=['PATCH'])
+@api_login_required
 def update_config(category: str):
     """Update config keys within a category.
 
     Body: {key: value, ...}
     Writes to PostgreSQL + syncs to Redis.
+    Secrets (api_key, secret) are Fernet-encrypted before storage.
     """
+    import os
     from app.models.system_config import SystemConfig
+    from app.utils.encryption import encrypt_value, mask_secret
 
     data = request.get_json()
     if not data:
         return jsonify({'error': 'no data'}), 400
 
+    fernet_key = os.environ.get('FERNET_KEY', '')
     updated_by = request.headers.get('X-Updated-By', 'api')
     changes = []
+
+    # Keys that should be encrypted at rest
+    SECRET_PATTERNS = ('api_key', 'secret', 'password', 'token')
 
     for key, value in data.items():
         row = SystemConfig.query.filter_by(
@@ -539,27 +557,39 @@ def update_config(category: str):
         ).first()
 
         old_value = row.value if row else None
+        is_secret = any(pat in key.lower() for pat in SECRET_PATTERNS)
+        store_value = str(value)
+
+        # Encrypt secrets before storing in DB
+        if is_secret and fernet_key and store_value:
+            store_value = encrypt_value(store_value, fernet_key)
 
         if row:
-            row.value = str(value)
+            row.value = store_value
+            row.is_secret = is_secret
             row.updated_by = updated_by
         else:
             row = SystemConfig(
                 category=category,
                 key=key,
-                value=str(value),
+                value=store_value,
+                is_secret=is_secret,
                 updated_by=updated_by,
             )
             db.session.add(row)
 
-        # Sync to Redis
+        # Sync plaintext to Redis (in-memory, not persisted to disk)
         redis_client.hset(f'config:{category}', key, str(value))
+
+        # Mask secrets in the response
+        display_old = mask_secret(old_value) if is_secret and old_value else old_value
+        display_new = mask_secret(str(value)) if is_secret else str(value)
 
         changes.append({
             'category': category,
             'key': key,
-            'old_value': old_value,
-            'new_value': str(value),
+            'old_value': display_old,
+            'new_value': display_new,
             'updated_by': updated_by,
         })
 
@@ -574,6 +604,7 @@ def update_config(category: str):
 
 
 @api_bp.route('/config/weights', methods=['PATCH'])
+@api_login_required
 def update_weights():
     """Update factor weights with validation (must sum to 1.0)."""
     data = request.get_json()
@@ -611,6 +642,7 @@ def update_weights():
 
 
 @api_bp.route('/config/mode', methods=['PATCH'])
+@api_login_required
 def update_mode():
     """Change operational mode with transition guards."""
     data = request.get_json()
@@ -622,7 +654,7 @@ def update_mode():
 
     # Get current mode
     current = redis_client.hget('config:system', 'operational_mode')
-    current = current.decode() if isinstance(current, bytes) else current
+    current = current or 'simulation'
 
     # Guard: live→simulation sets kill switch
     if current == 'live' and mode == 'simulation':
@@ -688,6 +720,7 @@ def get_config_audit():
 # ── control ────────────────────────────────────────────────────────
 
 @api_bp.route('/control/<switch>', methods=['PATCH'])
+@api_login_required
 def toggle_kill_switch(switch: str):
     """Toggle a kill switch on or off.
 
@@ -713,6 +746,7 @@ def toggle_kill_switch(switch: str):
 
 
 @api_bp.route('/control/force_liquidate', methods=['POST'])
+@api_login_required
 def force_liquidate():
     """Emergency liquidation of all positions.
 
@@ -739,28 +773,140 @@ def force_liquidate():
 
 # ── universe ───────────────────────────────────────────────────────
 
+def _serialize_etf(e) -> dict:
+    """Serialize an ETFUniverse row with all tracking columns."""
+    return {
+        'symbol': e.symbol,
+        'name': e.name,
+        'sector': e.sector,
+        'aum_bn': _to_float(e.aum_bn),
+        'avg_daily_vol_m': _to_float(e.avg_daily_vol_m),
+        'spread_bps': _to_float(e.spread_est_bps),
+        'liquidity_score': _to_float(e.liquidity_score),
+        'options': e.options_market,
+        'in_active_set': bool(e.in_active_set),
+        'active_set_reason': e.active_set_reason,
+        'notes': e.notes,
+        'your_rating': e.your_rating,
+        'tags': e.tags,
+        'last_signal_type': e.last_signal_type,
+        'last_composite_score': _to_float(e.last_composite_score),
+        'last_signal_at': e.last_signal_at.isoformat() if e.last_signal_at else None,
+        'perf_1w': _to_float(e.perf_1w),
+        'perf_1m': _to_float(e.perf_1m),
+        'perf_3m': _to_float(e.perf_3m),
+        'correlation_to_spy': _to_float(e.correlation_to_spy),
+    }
+
+
 @api_bp.route('/universe', methods=['GET'])
 def get_universe():
-    """Get ETF universe with metadata."""
+    """Get full ETF watchlist with tracking data.
+
+    Query params:
+        active_set=true  — filter to active trading set only
+    """
     from app.models.etf_universe import ETFUniverse
 
-    etfs = ETFUniverse.query.filter_by(is_active=True).order_by(
-        ETFUniverse.symbol,
-    ).all()
+    query = ETFUniverse.query.filter_by(is_active=True)
 
-    return jsonify([
-        {
-            'symbol': e.symbol,
-            'name': e.name,
-            'sector': e.sector,
-            'aum_bn': _to_float(e.aum_bn),
-            'avg_daily_vol_m': _to_float(e.avg_daily_vol_m),
-            'spread_bps': _to_float(e.spread_est_bps),
-            'liquidity_score': _to_float(e.liquidity_score),
-            'options': e.options_market,
-        }
-        for e in etfs
-    ])
+    if request.args.get('active_set', '').lower() == 'true':
+        query = query.filter_by(in_active_set=True)
+
+    etfs = query.order_by(ETFUniverse.symbol).all()
+    return jsonify([_serialize_etf(e) for e in etfs])
+
+
+@api_bp.route('/universe/<symbol>/active-set', methods=['PATCH'])
+@api_login_required
+def toggle_active_set(symbol: str):
+    """Add or remove an ETF from the active trading set.
+
+    Body: {"in_active_set": true/false, "reason": "optional reason"}
+
+    On activation: dispatches backfill, syncs Redis active-set cache,
+    adds to WebSocket subscription, publishes config_change event.
+    """
+    from app.models.etf_universe import ETFUniverse
+
+    etf = ETFUniverse.query.filter_by(symbol=symbol.upper()).first()
+    if not etf:
+        return jsonify({'error': f'{symbol} not found in universe'}), 404
+
+    data = request.get_json()
+    if data is None or 'in_active_set' not in data:
+        return jsonify({'error': 'in_active_set required'}), 400
+
+    activate = bool(data['in_active_set'])
+    etf.in_active_set = activate
+    etf.active_set_reason = data.get('reason', '')
+    etf.active_set_changed_at = datetime.now(timezone.utc)
+    db.session.commit()
+
+    sym = etf.symbol
+    onboarding = {}
+
+    if activate:
+        # 1. Dispatch historical backfill (756 days for factor lookbacks)
+        try:
+            from app.data.tasks import backfill_bars
+            backfill_bars.delay(sym, 756)
+            onboarding['backfill'] = 'dispatched'
+        except Exception as exc:
+            onboarding['backfill'] = f'failed: {exc}'
+
+        # 2. Add to Redis active-set cache
+        redis_client.sadd('config:active_symbols', sym)
+
+        # 3. Add to WebSocket subscription if running
+        if _ws_listener and _ws_listener.is_running:
+            _ws_listener.add_symbol(sym)
+            onboarding['websocket'] = 'subscribed'
+        else:
+            onboarding['websocket'] = 'listener_not_running'
+    else:
+        # Remove from Redis active-set cache
+        redis_client.srem('config:active_symbols', sym)
+        onboarding['note'] = 'removed; positions exit at next rebalance'
+
+    # 4. Publish config change event for dashboard
+    redis_client.publish('channel:config_change', json.dumps({
+        'type': 'active_set_changed',
+        'symbol': sym,
+        'in_active_set': activate,
+        'reason': etf.active_set_reason,
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+    }))
+
+    return jsonify({
+        'symbol': sym,
+        'in_active_set': etf.in_active_set,
+        'reason': etf.active_set_reason,
+        'onboarding': onboarding,
+    })
+
+
+@api_bp.route('/universe/<symbol>', methods=['PATCH'])
+@api_login_required
+def update_universe_etf(symbol: str):
+    """Update tracking fields on a watchlist ETF.
+
+    Body: {"notes": "...", "your_rating": 4, "tags": "momentum,defensive"}
+    """
+    from app.models.etf_universe import ETFUniverse
+
+    etf = ETFUniverse.query.filter_by(symbol=symbol.upper()).first()
+    if not etf:
+        return jsonify({'error': f'{symbol} not found'}), 404
+
+    data = request.get_json() or {}
+    allowed = ('notes', 'your_rating', 'tags')
+    for field in allowed:
+        if field in data:
+            setattr(etf, field, data[field])
+
+    db.session.commit()
+    return jsonify(_serialize_etf(etf))
 
 
 # ── backtest ───────────────────────────────────────────────────────
@@ -938,7 +1084,7 @@ def get_pipeline_status():
     kill_switches = {}
     for switch in ('trading', 'rebalance', 'all'):
         val = redis_client.get(f'kill_switch:{switch}')
-        kill_switches[switch] = val == b'1'
+        kill_switches[switch] = val == '1'
 
     # Operational mode
     mode = redis_client.hget('config:system', 'operational_mode')
@@ -1047,11 +1193,13 @@ def trigger_compute():
         from app.signals.signal_generator import SignalGenerator
         from app.models.etf_universe import ETFUniverse
 
-        etfs = ETFUniverse.query.filter_by(is_active=True).all()
+        etfs = ETFUniverse.query.filter_by(
+            is_active=True, in_active_set=True,
+        ).all()
         symbols = [e.symbol for e in etfs]
 
         if not symbols:
-            return jsonify({'error': 'No active ETFs in universe'}), 400
+            return jsonify({'error': 'No ETFs in active set'}), 400
 
         # Compute factors (persists to DB + Redis)
         registry = FactorRegistry(
@@ -1201,6 +1349,23 @@ def pipeline_status():
 
 # ── websocket control ─────────────────────────────────────────────
 
+def _sync_active_set_cache():
+    """Rebuild Redis SET config:active_symbols from DB truth."""
+    from app.models.etf_universe import ETFUniverse
+
+    etfs = ETFUniverse.query.filter_by(
+        is_active=True, in_active_set=True,
+    ).all()
+    symbols = [e.symbol for e in etfs]
+
+    pipe = redis_client.pipeline()
+    pipe.delete('config:active_symbols')
+    if symbols:
+        pipe.sadd('config:active_symbols', *symbols)
+    pipe.execute()
+    return symbols
+
+
 # Global reference to the WebSocket listener instance
 _ws_listener = None
 
@@ -1225,6 +1390,9 @@ def start_websocket():
 
     etfs = ETFUniverse.query.filter_by(is_active=True).all()
     symbols = [e.symbol for e in etfs]
+
+    # Sync Redis active-set cache on startup
+    _sync_active_set_cache()
 
     _ws_listener = AlpacaWebSocketListener(api_key, secret_key, redis_client)
     _ws_listener.start(symbols)

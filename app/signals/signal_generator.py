@@ -10,7 +10,12 @@ from app.extensions import db
 from app.factors.factor_registry import FactorRegistry
 from app.models.signals import Signal
 from app.signals.composite_scorer import CompositeScorer
-from app.signals.regime_detector import RegimeTracker, classify_regime
+from app.signals.regime_detector import (
+    RegimeTracker,
+    classify_regime,
+    detect_correlation_collapse,
+    momentum_divergence_score,
+)
 from app.signals.signal_filter import SignalFilter
 
 logger = structlog.get_logger()
@@ -84,6 +89,26 @@ class SignalGenerator:
         # 2. Aggregate market factors and classify regime
         market_factors = self._aggregate_market_factors(all_scores, universe)
         raw_regime, raw_confidence = classify_regime(market_factors)
+
+        # 2b. Check correlation collapse — override to rotation if detected
+        corr_history = self._get_correlation_history()
+        collapse_detected = False
+        if corr_history is not None and len(corr_history) >= 60:
+            collapse_detected = detect_correlation_collapse(corr_history)
+            if collapse_detected:
+                raw_regime = 'rotation'
+                raw_confidence = max(raw_confidence, 0.75)
+                self._log.warning(
+                    'correlation_collapse_detected',
+                    override_regime='rotation',
+                )
+
+        # 2c. Compute momentum divergence for rotation confidence
+        mom_divergence = 0.5
+        sector_closes = self._get_sector_closes(universe)
+        if sector_closes is not None and not sector_closes.empty:
+            mom_divergence = momentum_divergence_score(sector_closes)
+
         effective_regime = self.regime.update(
             raw_regime, raw_confidence, market_factors,
         )
@@ -91,6 +116,12 @@ class SignalGenerator:
             raw_confidence if effective_regime == raw_regime
             else self.regime.current_confidence
         )
+
+        # Adjust confidence for rotation regime using divergence signal
+        if effective_regime == 'rotation':
+            effective_confidence = round(
+                effective_confidence * 0.7 + mom_divergence * 0.3, 4,
+            )
 
         # 3. Rank universe by composite score
         ranked_df = self.scorer.rank_universe(all_scores)
@@ -159,6 +190,52 @@ class SignalGenerator:
 
         df = pd.DataFrame(all_scores).T
         return df.mean().to_dict()
+
+    def _get_correlation_history(self) -> pd.Series | None:
+        """Load daily avg-correlation series from Redis or DB for collapse detection."""
+        if self._redis is None:
+            return None
+        try:
+            raw = self._redis.get('cache:corr_history')
+            if raw is None:
+                return None
+            data = json.loads(raw)
+            if not data:
+                return None
+            return pd.Series(data, dtype=float).sort_index()
+        except Exception:
+            return None
+
+    def _get_sector_closes(self, universe: list[str]) -> pd.DataFrame | None:
+        """Load sector-level close prices for momentum divergence calculation."""
+        try:
+            from app.models.price_bars import PriceBar
+            from sqlalchemy import desc
+
+            # Use sector ETFs from the universe (XL* tickers)
+            sector_syms = [s for s in universe if s.startswith('XL')]
+            if len(sector_syms) < 6:
+                return None
+
+            frames = {}
+            for sym in sector_syms:
+                bars = (
+                    PriceBar.query
+                    .filter_by(symbol=sym, timeframe='1d')
+                    .order_by(desc(PriceBar.timestamp))
+                    .limit(300)
+                    .all()
+                )
+                if bars:
+                    frames[sym] = pd.Series(
+                        {b.timestamp: float(b.close) for b in bars},
+                    ).sort_index()
+
+            if len(frames) < 6:
+                return None
+            return pd.DataFrame(frames).dropna(how='all')
+        except Exception:
+            return None
 
     def _get_cached_float(self, key: str) -> float | None:
         """Read a float from Redis cache."""
