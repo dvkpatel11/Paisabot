@@ -71,6 +71,8 @@ DEFAULTS = [
     ('execution', 'min_trade_threshold_pct', '0.005', 'float', 'Skip rebalance legs < 50 bps'),
     ('execution', 'allow_short', 'false', 'bool', 'Allow short signals (risk_off only)'),
     ('execution', 'mt5_gateway_url', 'http://localhost:8001', 'string', 'MT5 gateway microservice URL'),
+    ('execution', 'mt5_deviation', '30', 'int', 'MT5 max price deviation in points'),
+    ('execution', 'mt5_magic_number', '100001', 'int', 'MT5 EA magic number for Paisabot orders'),
 
     # --- data ---
     ('data', 'price_data_provider', 'alpaca', 'string', 'alpaca / polygon / databento'),
