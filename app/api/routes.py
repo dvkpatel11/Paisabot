@@ -784,7 +784,7 @@ def _serialize_etf(e) -> dict:
         'spread_bps': _to_float(e.spread_est_bps),
         'liquidity_score': _to_float(e.liquidity_score),
         'options': e.options_market,
-        'in_active_set': e.in_active_set,
+        'in_active_set': bool(e.in_active_set),
         'active_set_reason': e.active_set_reason,
         'notes': e.notes,
         'your_rating': e.your_rating,

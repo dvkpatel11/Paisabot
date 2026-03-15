@@ -107,9 +107,9 @@ document.addEventListener('DOMContentLoaded', function() {
         var c = v === 'long' ? 'var(--green)' : v === 'avoid' ? 'var(--red)' : 'var(--text-muted)';
         return '<span style="color:' + c + '">' + v + '</span>';
       }},
-    {title: 'Score', field: 'last_composite_score', width: 70},
-    {title: 'AUM ($B)', field: 'aum_bn', width: 80},
-    {title: 'Spread (bps)', field: 'spread_bps', width: 85},
+    {title: 'Score', field: 'last_composite_score', width: 70, formatter: PaisaTables.scoreFormatter},
+    {title: 'AUM ($B)', field: 'aum_bn', width: 80, formatter: function(cell) { var v = cell.getValue(); return v != null ? parseFloat(v).toFixed(1) : '--'; }},
+    {title: 'Spread', field: 'spread_bps', width: 75, formatter: PaisaTables.bpsFormatter},
     {title: '1w %', field: 'perf_1w', width: 65, formatter: PaisaTables.pctFormatter},
     {title: '1m %', field: 'perf_1m', width: 65, formatter: PaisaTables.pctFormatter},
   ]);

@@ -22,7 +22,7 @@ class ETFUniverse(db.Model):
 
     # ── watchlist flags ──────────────────────────────────────────
     is_active = db.Column(db.Boolean, default=True)        # visible in UI / data backfill
-    in_active_set = db.Column(db.Boolean, default=False)   # enters trading pipeline
+    in_active_set = db.Column(db.Boolean, default=False, server_default='false', nullable=False)   # enters trading pipeline
     active_set_reason = db.Column(db.String(200))           # why added/removed
     active_set_changed_at = db.Column(db.DateTime(timezone=True))
 

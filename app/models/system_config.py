@@ -11,7 +11,7 @@ class SystemConfig(db.Model):
     key = db.Column(db.String(100), nullable=False)
     value = db.Column(db.Text, nullable=False)
     value_type = db.Column(db.String(10), default='string')
-    is_secret = db.Column(db.Boolean, default=False)
+    is_secret = db.Column(db.Boolean, default=False, server_default='false', nullable=False)
     description = db.Column(db.Text)
     updated_at = db.Column(
         db.DateTime(timezone=True),
