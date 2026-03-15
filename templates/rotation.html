@@ -41,10 +41,17 @@
 document.addEventListener('DOMContentLoaded', function() {
   fetch('/api/regime').then(r => r.json()).then(data => {
     const badge = document.getElementById('rotation-regime');
-    badge.textContent = data.regime || 'unknown';
-    badge.className = 'badge badge-lg badge-' + PaisaUtils.regimeColor(data.regime);
-    document.getElementById('rotation-confidence').textContent =
-      'confidence ' + ((data.confidence || 0) * 100).toFixed(0) + '%';
+    const regime = data.regime || 'unknown';
+    badge.textContent = regime;
+    badge.className = 'badge badge-lg badge-' + PaisaUtils.regimeColor(regime);
+
+    if (regime === 'unknown') {
+      document.getElementById('rotation-confidence').textContent =
+        'No regime data — run Compute Factors from Pipelines';
+    } else {
+      document.getElementById('rotation-confidence').textContent =
+        'confidence ' + ((data.confidence || 0) * 100).toFixed(0) + '%';
+    }
 
     // Regime timeline
     if (data.history && data.history.length > 0) {
@@ -55,6 +62,9 @@ document.addEventListener('DOMContentLoaded', function() {
         colors: colors,
         title: '',
       });
+    } else {
+      document.getElementById('regime-timeline').innerHTML =
+        '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:13px">No history yet</div>';
     }
   });
 
@@ -62,6 +72,14 @@ document.addEventListener('DOMContentLoaded', function() {
   fetch('/api/signals').then(r => r.json()).then(data => {
     const allSignals = [...(data.long || []), ...(data.neutral || []), ...(data.avoid || [])];
     allSignals.sort((a, b) => b.composite_score - a.composite_score);
+
+    if (allSignals.length === 0) {
+      document.getElementById('sector-chart').innerHTML =
+        '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:14px">' +
+        'No signals yet. Run <a href="/pipelines" style="color:var(--accent)">Compute Factors</a> from the Pipelines page.' +
+        '</div>';
+      return;
+    }
 
     PaisaCharts.horizontalBar('sector-chart', {
       labels: allSignals.map(s => s.symbol),

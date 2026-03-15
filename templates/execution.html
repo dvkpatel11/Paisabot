@@ -46,6 +46,48 @@
   </div>
 </div>
 
+<!-- Manual Trade Entry -->
+<div class="panel panel-full" style="margin-bottom:16px">
+  <div class="panel-header"><h2>Manual Trade Entry</h2></div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+    <label class="form-label">
+      Symbol
+      <select id="mt-symbol" class="select-input" style="width:100px"></select>
+    </label>
+    <label class="form-label">
+      Side
+      <select id="mt-side" class="select-input" style="width:80px">
+        <option value="buy">Buy</option>
+        <option value="sell">Sell</option>
+      </select>
+    </label>
+    <label class="form-label">
+      Type
+      <select id="mt-type" class="select-input" style="width:90px">
+        <option value="market">Market</option>
+        <option value="limit">Limit</option>
+      </select>
+    </label>
+    <label class="form-label">
+      Notional ($)
+      <input type="number" id="mt-notional" class="input-field" style="width:110px" value="5000" step="500" min="100">
+    </label>
+    <label class="form-label" id="mt-limit-row" style="display:none">
+      Limit Price
+      <input type="number" id="mt-limit" class="input-field" style="width:100px" step="0.01">
+    </label>
+    <label class="form-label">
+      Broker
+      <select id="mt-broker" class="select-input" style="width:100px">
+        <option value="alpaca">Alpaca</option>
+        <option value="mt5">MT5</option>
+      </select>
+    </label>
+    <button class="btn btn-primary" id="mt-submit" onclick="submitManualTrade()">Submit</button>
+    <span class="text-muted" id="mt-status" style="font-size:12px"></span>
+  </div>
+</div>
+
 <!-- Trade Log -->
 <div class="panel panel-full">
   <div class="panel-header">
@@ -53,6 +95,11 @@
   </div>
   <div id="exec-trades-table"></div>
 </div>
+
+<style>
+.form-label { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--text-secondary); }
+.input-field { background:var(--bg-panel); border:1px solid var(--border); border-radius:4px; padding:6px 8px; color:var(--text-primary); font-size:13px; }
+</style>
 {% endblock %}
 
 {% block scripts %}
@@ -149,6 +196,65 @@ document.addEventListener('DOMContentLoaded', function() {
   PaisaSocket.on('trade', function() {
     fetch('/api/trades?limit=50').then(r => r.json()).then(d => PaisaTables.setData('exec-trades-table', d));
   });
+
+  // Populate manual trade symbol dropdown from universe
+  fetch('/api/universe').then(r => r.json()).then(etfs => {
+    const sel = document.getElementById('mt-symbol');
+    etfs.forEach(e => {
+      const opt = document.createElement('option');
+      opt.value = e.symbol;
+      opt.textContent = e.symbol;
+      sel.appendChild(opt);
+    });
+  });
+
+  // Show/hide limit price
+  document.getElementById('mt-type').addEventListener('change', function() {
+    document.getElementById('mt-limit-row').style.display = this.value === 'limit' ? '' : 'none';
+  });
 });
+
+function submitManualTrade() {
+  const btn = document.getElementById('mt-submit');
+  const status = document.getElementById('mt-status');
+  btn.disabled = true;
+
+  const orderType = document.getElementById('mt-type').value;
+  const body = {
+    symbol: document.getElementById('mt-symbol').value,
+    side: document.getElementById('mt-side').value,
+    order_type: orderType,
+    notional: parseFloat(document.getElementById('mt-notional').value),
+    broker: document.getElementById('mt-broker').value,
+  };
+  if (orderType === 'limit') {
+    body.limit_price = parseFloat(document.getElementById('mt-limit').value);
+  }
+
+  status.textContent = 'Submitting...';
+  fetch('/api/trades/manual', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  })
+  .then(r => r.json())
+  .then(data => {
+    btn.disabled = false;
+    if (data.error) {
+      status.textContent = 'Error: ' + data.error;
+      status.style.color = 'var(--red)';
+    } else {
+      status.textContent = 'Trade submitted (ID: ' + data.trade_id + ')';
+      status.style.color = 'var(--green)';
+      // Refresh trades table
+      fetch('/api/trades?limit=50').then(r => r.json()).then(d => PaisaTables.setData('exec-trades-table', d));
+    }
+  })
+  .catch(err => {
+    btn.disabled = false;
+    status.textContent = 'Failed: ' + err.message;
+    status.style.color = 'var(--red)';
+  });
+}
 </script>
 {% endblock %}
