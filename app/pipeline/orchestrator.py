@@ -41,11 +41,19 @@ class PipelineOrchestrator:
         now = datetime.now(timezone.utc)
         self._log.info('pipeline_start')
 
-        # 1. Load signals
+        # 1. Load signals (only for active-set ETFs)
+        active_symbols = self._load_active_set()
+        if not active_symbols:
+            self._log.warning('pipeline_empty_active_set')
+            return self._result(now, stage='active_set', reason='no_etfs_in_active_set')
+
         signals = self._load_signals()
         if not signals:
             self._log.info('pipeline_no_signals')
             return self._result(now, stage='signals', reason='no_signals')
+
+        # Filter signals to active set only
+        signals = {s: v for s, v in signals.items() if s in active_symbols}
 
         # 2. Determine regime from signals
         regime = self._get_regime(signals)
@@ -297,8 +305,19 @@ class PipelineOrchestrator:
             return float(latest.drawdown)
         return 0.0
 
+    def _load_active_set(self) -> set[str]:
+        """Load symbols with in_active_set=True (the trading subset)."""
+        from app.models.etf_universe import ETFUniverse
+
+        etfs = ETFUniverse.query.filter_by(
+            is_active=True, in_active_set=True,
+        ).all()
+        symbols = {e.symbol for e in etfs}
+        self._log.info('active_set_loaded', count=len(symbols))
+        return symbols
+
     def _build_sector_map(self) -> dict[str, str]:
-        """Load {symbol: sector} from ETFUniverse."""
+        """Load {symbol: sector} from full active universe (for constraints)."""
         from app.models.etf_universe import ETFUniverse
 
         etfs = ETFUniverse.query.filter_by(is_active=True).all()

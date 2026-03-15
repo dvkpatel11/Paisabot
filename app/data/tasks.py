@@ -145,7 +145,9 @@ def compute_all_factors(self):
         import json
 
         try:
-            etfs = ETFUniverse.query.filter_by(is_active=True).all()
+            etfs = ETFUniverse.query.filter_by(
+                is_active=True, in_active_set=True,
+            ).all()
             symbols = [e.symbol for e in etfs]
             logger.info('compute_all_factors_start', count=len(symbols))
 
