@@ -95,12 +95,23 @@ document.addEventListener('DOMContentLoaded', function() {
   // Universe table
   PaisaTables.create('universe-table', [
     {title: 'Symbol', field: 'symbol', width: 80},
+    {title: 'Trading', field: 'in_active_set', width: 70, hozAlign: 'center',
+      formatter: function(cell) {
+        return cell.getValue() ? '<span style="color:var(--green)">&#9679;</span>' : '<span style="color:var(--text-muted)">&#9675;</span>';
+      }},
     {title: 'Name', field: 'name'},
     {title: 'Sector', field: 'sector'},
-    {title: 'AUM ($B)', field: 'aum_bn'},
-    {title: 'ADV ($M)', field: 'avg_daily_vol_m'},
-    {title: 'Spread (bps)', field: 'spread_bps'},
-    {title: 'Liq Score', field: 'liquidity_score'},
+    {title: 'Signal', field: 'last_signal_type', width: 70,
+      formatter: function(cell) {
+        var v = cell.getValue() || '-';
+        var c = v === 'long' ? 'var(--green)' : v === 'avoid' ? 'var(--red)' : 'var(--text-muted)';
+        return '<span style="color:' + c + '">' + v + '</span>';
+      }},
+    {title: 'Score', field: 'last_composite_score', width: 70},
+    {title: 'AUM ($B)', field: 'aum_bn', width: 80},
+    {title: 'Spread (bps)', field: 'spread_bps', width: 85},
+    {title: '1w %', field: 'perf_1w', width: 65, formatter: PaisaTables.pctFormatter},
+    {title: '1m %', field: 'perf_1m', width: 65, formatter: PaisaTables.pctFormatter},
   ]);
 
   // Load data
