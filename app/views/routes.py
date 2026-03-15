@@ -38,6 +38,11 @@ def alerts():
     return render_template('alerts.html')
 
 
+@views_bp.route('/pipelines')
+def pipelines():
+    return render_template('pipelines.html')
+
+
 @views_bp.route('/config')
 def config():
     return render_template('config.html')

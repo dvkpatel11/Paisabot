@@ -47,3 +47,31 @@ def publish_system_health(redis_client, health: dict) -> None:
 
 def publish_config_change(redis_client, change: dict) -> None:
     publish_event(redis_client, 'channel:config_change', change)
+
+
+def publish_pipeline_status(redis_client, module_id: str, status: dict) -> None:
+    """Publish pipeline module status to Redis cache + pub/sub.
+
+    Args:
+        redis_client: Redis connection.
+        module_id: Module identifier (e.g. 'factor_engine', 'signal_engine').
+        status: Dict with keys: status, items_processed, compute_time_ms, extra.
+    """
+    import json as _json
+    from datetime import datetime, timezone
+
+    status['last_activity'] = datetime.now(timezone.utc).isoformat()
+    status.setdefault('status', 'ok')
+
+    # Cache for API polling (TTL 5 min)
+    cache_key = f'cache:pipeline:{module_id}'
+    try:
+        redis_client.setex(cache_key, 300, _json.dumps(status, default=str))
+    except Exception:
+        pass
+
+    # Also broadcast for live dashboard
+    publish_event(redis_client, 'channel:system_health', {
+        'module': module_id,
+        **status,
+    })
