@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import jsonify, request
 
@@ -43,22 +43,28 @@ def health():
         components['database'] = 'error'
         details['database'] = str(exc)
 
-    # Check Alpaca
+    # Check Alpaca — cached 30s to avoid a live network call on every page load
     import os
     alpaca_key = os.environ.get('ALPACA_API_KEY', '')
     if alpaca_key:
-        try:
-            from alpaca.trading.client import TradingClient
-            client = TradingClient(
-                alpaca_key,
-                os.environ.get('ALPACA_SECRET_KEY', ''),
-                paper=os.environ.get('ALPACA_PAPER', 'true').lower() == 'true',
-            )
-            client.get_account()
-            components['alpaca'] = 'ok'
-        except Exception as exc:
-            components['alpaca'] = 'error'
-            details['alpaca'] = str(exc)
+        cached_alpaca = redis_client.get('cache:health:alpaca')
+        if cached_alpaca:
+            components['alpaca'] = cached_alpaca.decode() if isinstance(cached_alpaca, bytes) else cached_alpaca
+        else:
+            try:
+                from alpaca.trading.client import TradingClient
+                client = TradingClient(
+                    alpaca_key,
+                    os.environ.get('ALPACA_SECRET_KEY', ''),
+                    paper=os.environ.get('ALPACA_PAPER', 'true').lower() == 'true',
+                )
+                client.get_account()
+                components['alpaca'] = 'ok'
+                redis_client.setex('cache:health:alpaca', 30, 'ok')
+            except Exception as exc:
+                components['alpaca'] = 'error'
+                details['alpaca'] = str(exc)
+                redis_client.setex('cache:health:alpaca', 30, 'error')
     else:
         details['alpaca'] = 'ALPACA_API_KEY not set in environment'
 
@@ -220,10 +226,13 @@ def get_regime():
     cached = redis_client.get('cache:regime:current')
     regime_data = json.loads(cached) if cached else {'regime': 'unknown', 'confidence': 0}
 
-    # Recent regime history from signals table
+    # Recent regime history from signals table — 90-day window to avoid full-table scan
     from app.models.signals import Signal
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
     history = db.session.query(
         Signal.signal_time, Signal.regime, Signal.regime_confidence,
+    ).filter(
+        Signal.signal_time >= cutoff,
     ).group_by(
         Signal.signal_time, Signal.regime, Signal.regime_confidence,
     ).order_by(
@@ -419,8 +428,10 @@ def submit_manual_trade():
 
         raw_cap = redis_client.hget('config:portfolio', 'initial_capital')
         initial_capital = float(raw_cap) if raw_cap else 100_000.0
-        realized = sum(float(p.realized_pnl or 0) for p in
-                       _Position.query.filter_by(status='closed').all())
+        from sqlalchemy import func as _func
+        realized = db.session.query(
+            _func.coalesce(_func.sum(_Position.realized_pnl), 0)
+        ).filter_by(status='closed').scalar() or 0.0
         unrealized = sum(float(p.unrealized_pnl or 0) for p in open_positions)
         portfolio_value = initial_capital + realized + unrealized
 
@@ -898,8 +909,8 @@ def get_universe():
         rows = db.session.execute(_text("""
             SELECT DISTINCT ON (symbol) symbol, close
             FROM price_bars
-            WHERE bar_time::date < current_date
-            ORDER BY symbol, bar_time DESC
+            WHERE timestamp::date < current_date
+            ORDER BY symbol, timestamp DESC
         """)).fetchall()
         prev_closes = {row[0]: float(row[1]) for row in rows}
     except Exception:

@@ -120,6 +120,9 @@ if [ "$SKIP_SEED" = false ]; then
 
     info "Seeding ETF universe..."
     python scripts/universe_setup.py
+
+    info "Backfilling historical bars..."
+    python scripts/backfill_history.py
 else
     warn "Skipping seed"
 fi
@@ -166,4 +169,4 @@ info "Celery beat running (PID $BEAT_PID)"
 # ── Flask dev server (foreground) ────────────────────────────────
 info "Starting Flask dev server on http://localhost:5000"
 echo "────────────────────────────────────────────────────"
-python wsgi.py
+FLASK_CONFIG=development python wsgi.py

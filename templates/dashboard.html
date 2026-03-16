@@ -34,26 +34,19 @@
   <div class="panel" x-data>
     <div class="panel-label">System Health</div>
     <div class="health-dots">
-      <span class="health-dot"
-        :style="{color: $store.dash.health.data === 'ok' ? 'var(--green)' : $store.dash.health.data === 'stale' ? 'var(--yellow)' : 'var(--red)'}"
+      <span class="health-dot" :class="$store.dash.health.data === 'error' ? 'error' : $store.dash.health.data === 'stale' ? 'stale' : ''"
         :title="'Data: ' + $store.dash.health.data">D</span>
-      <span class="health-dot"
-        :style="{color: $store.dash.health.factors === 'ok' ? 'var(--green)' : $store.dash.health.factors === 'stale' ? 'var(--yellow)' : 'var(--red)'}"
+      <span class="health-dot" :class="$store.dash.health.factors === 'error' ? 'error' : $store.dash.health.factors === 'stale' ? 'stale' : ''"
         :title="'Factors: ' + $store.dash.health.factors">F</span>
-      <span class="health-dot"
-        :style="{color: $store.dash.health.signals === 'ok' ? 'var(--green)' : $store.dash.health.signals === 'stale' ? 'var(--yellow)' : 'var(--red)'}"
+      <span class="health-dot" :class="$store.dash.health.signals === 'error' ? 'error' : $store.dash.health.signals === 'stale' ? 'stale' : ''"
         :title="'Signals: ' + $store.dash.health.signals">S</span>
-      <span class="health-dot"
-        :style="{color: $store.dash.health.portfolio === 'ok' ? 'var(--green)' : $store.dash.health.portfolio === 'stale' ? 'var(--yellow)' : 'var(--red)'}"
+      <span class="health-dot" :class="$store.dash.health.portfolio === 'error' ? 'error' : $store.dash.health.portfolio === 'stale' ? 'stale' : ''"
         :title="'Portfolio: ' + $store.dash.health.portfolio">P</span>
-      <span class="health-dot"
-        :style="{color: $store.dash.health.risk === 'ok' ? 'var(--green)' : $store.dash.health.risk === 'stale' ? 'var(--yellow)' : 'var(--red)'}"
+      <span class="health-dot" :class="$store.dash.health.risk === 'error' ? 'error' : $store.dash.health.risk === 'stale' ? 'stale' : ''"
         :title="'Risk: ' + $store.dash.health.risk">R</span>
-      <span class="health-dot"
-        :style="{color: $store.dash.health.execution === 'ok' ? 'var(--green)' : $store.dash.health.execution === 'stale' ? 'var(--yellow)' : 'var(--red)'}"
+      <span class="health-dot" :class="$store.dash.health.execution === 'error' ? 'error' : $store.dash.health.execution === 'stale' ? 'stale' : ''"
         :title="'Execution: ' + $store.dash.health.execution">E</span>
-      <span class="health-dot"
-        :style="{color: $store.dash.health.monitoring === 'ok' ? 'var(--green)' : $store.dash.health.monitoring === 'stale' ? 'var(--yellow)' : 'var(--red)'}"
+      <span class="health-dot" :class="$store.dash.health.monitoring === 'error' ? 'error' : $store.dash.health.monitoring === 'stale' ? 'stale' : ''"
         :title="'Monitoring: ' + $store.dash.health.monitoring">M</span>
     </div>
   </div>
@@ -275,26 +268,26 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   PaisaTables.create('universe-table', [
-    {title: 'Symbol', field: 'symbol',              width: 75, frozen: true},
-    {title: 'Active', field: 'in_active_set',        width: 60, hozAlign: 'center',
+    {title: 'Symbol', field: 'symbol',              width: 75,  frozen: true},
+    {title: 'Active', field: 'in_active_set',        width: 60,  hozAlign: 'center',
       formatter: activeToggleFormatter, cellClick: activeToggleCellClick},
-    {title: 'Price',  field: 'current_price',        width: 85, formatter: priceFormatter},
-    {title: 'Chg %',  field: 'current_price',        width: 75, formatter: changePctFormatter},
-    {title: 'Signal', field: 'last_signal_type',     width: 70,
+    {title: 'Price',  field: 'current_price',        width: 90,  hozAlign: 'right', formatter: priceFormatter},
+    {title: 'Chg %',  field: 'prev_close',           width: 80,  hozAlign: 'right', formatter: changePctFormatter},
+    {title: 'Signal', field: 'last_signal_type',     width: 72,
       formatter: function(cell) {
         const v = cell.getValue() || '-';
         const c = v === 'long' ? 'var(--green)' : v === 'avoid' ? 'var(--red)' : 'var(--text-muted)';
         return `<span style="color:${c}">${v}</span>`;
       }},
-    {title: 'Score',  field: 'last_composite_score', width: 65, formatter: PaisaTables.scoreFormatter},
-    {title: 'Name',   field: 'name'},
-    {title: 'Sector', field: 'sector'},
-    {title: 'AUM $B', field: 'aum_bn',               width: 75,
+    {title: 'Score',  field: 'last_composite_score', width: 70,  hozAlign: 'right', formatter: PaisaTables.scoreFormatter},
+    {title: 'Name',   field: 'name',                 minWidth: 160},
+    {title: 'Sector', field: 'sector',               minWidth: 100},
+    {title: 'AUM $B', field: 'aum_bn',               width: 80,  hozAlign: 'right',
       formatter: cell => { const v = cell.getValue(); return v != null ? parseFloat(v).toFixed(1) : '--'; }},
-    {title: 'Spread', field: 'spread_bps',            width: 70, formatter: PaisaTables.bpsFormatter},
-    {title: '1w %',   field: 'perf_1w',               width: 65, formatter: PaisaTables.pctFormatter},
-    {title: '1m %',   field: 'perf_1m',               width: 65, formatter: PaisaTables.pctFormatter},
-  ], {index: 'symbol'});
+    {title: 'Spread', field: 'spread_bps',            width: 75,  hozAlign: 'right', formatter: PaisaTables.bpsFormatter},
+    {title: '1w %',   field: 'perf_1w',               width: 72,  hozAlign: 'right', formatter: PaisaTables.pctFormatter},
+    {title: '1m %',   field: 'perf_1m',               width: 72,  hozAlign: 'right', formatter: PaisaTables.pctFormatter},
+  ], {index: 'symbol', layout: 'fitDataTable', maxHeight: '480px'});
 });
 </script>
 {% endblock %}

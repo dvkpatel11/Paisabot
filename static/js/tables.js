@@ -45,7 +45,10 @@ const PaisaTables = (function() {
   function pctFormatter(cell) {
     const val = cell.getValue();
     if (val == null) return '--';
-    return (parseFloat(val) * 100).toFixed(2) + '%';
+    const num = parseFloat(val) * 100;
+    const color = num >= 0 ? 'var(--green)' : 'var(--red)';
+    const sign = num >= 0 ? '+' : '';
+    return `<span style="color:${color}">${sign}${num.toFixed(2)}%</span>`;
   }
 
   function bpsFormatter(cell) {
@@ -61,7 +64,7 @@ const PaisaTables = (function() {
     if (val == null) return '--';
     const num = parseFloat(val);
     const color = num >= 0.65 ? 'var(--green)' : num >= 0.40 ? 'var(--yellow)' : 'var(--red)';
-    return '<span style="color:' + color + '; font-weight:600">' + num.toFixed(4) + '</span>';
+    return '<span style="color:' + color + '; font-weight:600">' + num.toFixed(2) + '</span>';
   }
 
   function timeFormatter(cell) {
