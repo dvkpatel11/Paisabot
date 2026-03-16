@@ -469,7 +469,7 @@ Regime changes require 3 consecutive days at the new regime. Exiting `risk_off` 
 
 ### Signal Blocking
 
-Signals are blocked (regardless of score) when:
+Signals are blocked (regardless of score) when:pppppppppppppppppppppppppppppppppppppppppppp
 - `kill_switch:trading` or `kill_switch:all` is active
 - ETF's ADV < minimum threshold
 - ETF's spread > maximum threshold
