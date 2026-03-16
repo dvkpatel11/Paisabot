@@ -28,7 +28,8 @@ class BaseConfig:
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
     SESSION_COOKIE_SECURE = False  # overridden in production
-    PERMANENT_SESSION_LIFETIME = 3600  # 1 hour
+    SESSION_PERMANENT = True
+    PERMANENT_SESSION_LIFETIME = 3600  # 1 hour (dev)
 
 
 class DevelopmentConfig(BaseConfig):
@@ -50,6 +51,7 @@ class ProductionConfig(BaseConfig):
     DEBUG = False
     SESSION_COOKIE_SECURE = True  # require HTTPS for cookies
     SESSION_COOKIE_SAMESITE = 'Lax'
+    PERMANENT_SESSION_LIFETIME = 28800  # 8 hours (trading day)
 
 
 config_map = {

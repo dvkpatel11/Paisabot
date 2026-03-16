@@ -79,11 +79,19 @@ def health():
 
     overall = 'ok' if all(v == 'ok' for v in components.values()) else 'degraded'
 
+    try:
+        mode = redis_client.hget('config:system', 'operational_mode') or 'simulation'
+        if isinstance(mode, bytes):
+            mode = mode.decode()
+    except Exception:
+        mode = 'simulation'
+
     result = {
         'status': overall,
         'components': components,
         'details': details,
         'kill_switches': kill_switches,
+        'operational_mode': mode,
         'timestamp': datetime.now(timezone.utc).isoformat(),
     }
     # Never expose the broker account number on an unauthenticated endpoint.
@@ -1828,3 +1836,100 @@ def _to_float(val) -> float | None:
     if val is None:
         return None
     return float(val)
+
+
+# ── market data ──────────────────────────────────────────────────
+
+@api_bp.route('/market/vix', methods=['GET'])
+@api_login_required
+def market_vix():
+    """Current VIX level + 30-day sparkline from Redis cache."""
+    current_raw = redis_client.get('vix:latest')
+    history_raw = redis_client.get('vix:history_252')
+
+    current = float(current_raw) if current_raw else None
+    history = []
+    if history_raw:
+        full = json.loads(history_raw) if isinstance(history_raw, str) else json.loads(history_raw.decode())
+        history = full[-30:] if len(full) >= 30 else full
+
+    prev = history[-2] if len(history) >= 2 else None
+    delta = round(current - prev, 2) if current is not None and prev is not None else None
+
+    return jsonify({
+        'current': current,
+        'delta': delta,
+        'history_30d': history,
+    })
+
+
+# ── sentiment feed ───────────────────────────────────────────────
+
+@api_bp.route('/sentiment/feed', methods=['GET'])
+@api_login_required
+def sentiment_feed():
+    """Recent sentiment headlines with scores."""
+    from app.models.sentiment_raw import SentimentRaw
+
+    symbol = request.args.get('symbol')
+    limit = min(int(request.args.get('limit', 20)), 100)
+
+    q = SentimentRaw.query.order_by(SentimentRaw.timestamp.desc())
+    if symbol:
+        q = q.filter_by(symbol=symbol.upper())
+    items = q.limit(limit).all()
+
+    return jsonify([{
+        'symbol': s.symbol,
+        'headline': (s.headline[:80] + '...') if s.headline and len(s.headline) > 80 else (s.headline or ''),
+        'source': s.source,
+        'raw_score': float(s.raw_score) if s.raw_score is not None else None,
+        'model': s.model,
+        'timestamp': s.timestamp.isoformat() if s.timestamp else None,
+    } for s in items])
+
+
+# ── rotation / correlation ───────────────────────────────────────
+
+@api_bp.route('/rotation/correlation', methods=['GET'])
+@api_login_required
+def rotation_correlation():
+    """30-day rolling pairwise return correlation matrix for active ETFs."""
+    import pandas as pd
+    from app.models.price_bars import PriceBar
+    from app.models.etf_universe import ETFUniverse
+
+    days = min(int(request.args.get('days', 30)), 252)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days + 5)
+
+    active = ETFUniverse.query.filter_by(is_active=True, in_active_set=True).all()
+    symbols = [e.symbol for e in active][:20]
+
+    if len(symbols) < 2:
+        return jsonify({'symbols': [], 'matrix': []})
+
+    rows = db.session.query(
+        PriceBar.symbol, PriceBar.timestamp, PriceBar.close,
+    ).filter(
+        PriceBar.symbol.in_(symbols),
+        PriceBar.timestamp >= cutoff,
+        PriceBar.timeframe == '1d',
+    ).order_by(PriceBar.timestamp).all()
+
+    if not rows:
+        return jsonify({'symbols': [], 'matrix': []})
+
+    df = pd.DataFrame(rows, columns=['symbol', 'date', 'close'])
+    df['close'] = df['close'].astype(float)
+    pivot = df.pivot_table(index='date', columns='symbol', values='close')
+    returns = pivot.pct_change().dropna()
+
+    valid = returns.columns[returns.notna().sum() >= max(5, days // 3)]
+    if len(valid) < 2:
+        return jsonify({'symbols': [], 'matrix': []})
+
+    corr = returns[valid].corr().round(3)
+    syms = list(corr.columns)
+    matrix = corr.values.tolist()
+
+    return jsonify({'symbols': syms, 'matrix': matrix})
