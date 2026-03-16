@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────────
 # Paisabot — Development launcher
-# Starts PostgreSQL + Redis (Docker), runs DB migrations, seeds
-# config, then launches the Flask dev server and Celery worker.
+# Starts PostgreSQL + Redis only (via docker-compose.infra.yml),
+# runs DB migrations, seeds config, then launches Flask + Celery
+# directly on the host — no app container build required.
 #
 # Usage:  ./scripts/run_dev.sh [--skip-docker] [--skip-migrate] [--skip-seed]
 # ──────────────────────────────────────────────────────────────────
@@ -65,13 +66,13 @@ if [ "$SKIP_DOCKER" = false ]; then
         exit 1
     fi
 
-    info "Starting PostgreSQL and Redis via Docker Compose..."
-    docker compose up -d
+    info "Starting PostgreSQL and Redis via docker-compose.infra.yml..."
+    docker compose -f docker-compose.infra.yml up -d
 
     # Wait for healthy containers
     echo -n "  Waiting for PostgreSQL..."
     for i in $(seq 1 30); do
-        if docker compose exec -T postgres pg_isready -U paisabot &>/dev/null; then
+        if docker compose -f docker-compose.infra.yml exec -T postgres pg_isready -U paisabot &>/dev/null; then
             echo " ready"
             break
         fi
@@ -86,7 +87,7 @@ if [ "$SKIP_DOCKER" = false ]; then
 
     echo -n "  Waiting for Redis..."
     for i in $(seq 1 15); do
-        if docker compose exec -T redis redis-cli ping &>/dev/null; then
+        if docker compose -f docker-compose.infra.yml exec -T redis redis-cli ping &>/dev/null; then
             echo " ready"
             break
         fi
@@ -99,7 +100,7 @@ if [ "$SKIP_DOCKER" = false ]; then
         echo -n "."
     done
 
-    info "Docker services are up"
+    info "Infrastructure is up (postgres + redis only — no app containers built)"
 else
     warn "Skipping Docker — assuming PostgreSQL and Redis are running"
 fi
@@ -144,7 +145,7 @@ cleanup() {
         wait "$BEAT_PID" 2>/dev/null || true
         info "Celery beat stopped"
     fi
-    info "Done. Docker services are still running — stop with: docker compose down"
+    info "Done. Infrastructure is still running — stop with: docker compose -f docker-compose.infra.yml down"
 }
 trap cleanup EXIT INT TERM
 

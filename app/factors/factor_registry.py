@@ -145,7 +145,6 @@ class FactorRegistry:
                     trend_score=scores.get('trend_score'),
                     volatility_score=scores.get('volatility_regime'),
                     sentiment_score=scores.get('sentiment_score'),
-                    dispersion_score=scores.get('dispersion_score'),
                     correlation_score=scores.get('correlation_index'),
                     breadth_score=scores.get('breadth_score'),
                     liquidity_score=scores.get('liquidity_score'),

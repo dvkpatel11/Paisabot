@@ -80,13 +80,14 @@ Set via `config:system.operational_mode` or `--mode` CLI flag:
 ## Composite Score
 
 ```
-ETF_SCORE = 0.25 * Trend
-           + 0.20 * Volatility_Regime
+ETF_SCORE = 0.30 * Trend
+           + 0.25 * Volatility_Regime
            + 0.15 * Sentiment
            + 0.15 * Breadth
-           + 0.15 * Dispersion
-           + 0.10 * Liquidity
+           + 0.15 * Liquidity
 ```
+
+Dispersion (F04) is excluded from the active composite. Its 15% was redistributed: +5% Trend, +5% Volatility, +5% Liquidity. `DispersionFactor` class remains in `app/factors/dispersion.py` for future research use.
 
 Weights are admin-configurable at runtime via `config:weights` Redis hash.
 

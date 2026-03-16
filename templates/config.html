@@ -165,12 +165,11 @@ function showBacktestTab() {
       <div>
         <h3 style="margin-bottom:8px;font-size:14px;color:var(--text-secondary)">Factor Weights</h3>
         <div style="display:flex;flex-direction:column;gap:6px">
-          <div class="wt-row"><label>Trend</label><input type="range" id="w-trend" min="0" max="100" value="25" oninput="this.nextElementSibling.textContent=this.value+'%'"><span>25%</span></div>
-          <div class="wt-row"><label>Volatility</label><input type="range" id="w-volatility" min="0" max="100" value="20" oninput="this.nextElementSibling.textContent=this.value+'%'"><span>20%</span></div>
+          <div class="wt-row"><label>Trend</label><input type="range" id="w-trend" min="0" max="100" value="30" oninput="this.nextElementSibling.textContent=this.value+'%'"><span>30%</span></div>
+          <div class="wt-row"><label>Volatility</label><input type="range" id="w-volatility" min="0" max="100" value="25" oninput="this.nextElementSibling.textContent=this.value+'%'"><span>25%</span></div>
           <div class="wt-row"><label>Sentiment</label><input type="range" id="w-sentiment" min="0" max="100" value="15" oninput="this.nextElementSibling.textContent=this.value+'%'"><span>15%</span></div>
           <div class="wt-row"><label>Breadth</label><input type="range" id="w-breadth" min="0" max="100" value="15" oninput="this.nextElementSibling.textContent=this.value+'%'"><span>15%</span></div>
-          <div class="wt-row"><label>Dispersion</label><input type="range" id="w-dispersion" min="0" max="100" value="15" oninput="this.nextElementSibling.textContent=this.value+'%'"><span>15%</span></div>
-          <div class="wt-row"><label>Liquidity</label><input type="range" id="w-liquidity" min="0" max="100" value="10" oninput="this.nextElementSibling.textContent=this.value+'%'"><span>10%</span></div>
+          <div class="wt-row"><label>Liquidity</label><input type="range" id="w-liquidity" min="0" max="100" value="15" oninput="this.nextElementSibling.textContent=this.value+'%'"><span>15%</span></div>
         </div>
         <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
           <button class="btn btn-primary" id="btn-bt-run" onclick="runConfigBacktest()">Run Backtest</button>
@@ -205,7 +204,6 @@ function runConfigBacktest() {
     volatility: parseInt(document.getElementById('w-volatility').value) / 100,
     sentiment: parseInt(document.getElementById('w-sentiment').value) / 100,
     breadth: parseInt(document.getElementById('w-breadth').value) / 100,
-    dispersion: parseInt(document.getElementById('w-dispersion').value) / 100,
     liquidity: parseInt(document.getElementById('w-liquidity').value) / 100,
   };
 

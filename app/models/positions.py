@@ -22,6 +22,8 @@ class Position(db.Model):
     opened_at = db.Column(db.DateTime(timezone=True), nullable=False)
     closed_at = db.Column(db.DateTime(timezone=True))
     close_reason = db.Column(db.String(50))
+    stop_price = db.Column(db.Numeric(12, 4))
+    take_profit_price = db.Column(db.Numeric(12, 4))
 
     def __repr__(self):
         return f'<Position {self.symbol} {self.direction} {self.status}>'
