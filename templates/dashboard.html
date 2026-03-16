@@ -53,7 +53,31 @@
 
 </div>
 
-<!-- Middle Row: Positions + Orders -->
+<!-- Account Row — hides itself if broker not configured -->
+<div class="grid grid-4" id="account-row" style="margin-top:0">
+  <div class="panel">
+    <div class="panel-label">Cash</div>
+    <div class="panel-value" id="acct-cash-val">--</div>
+    <div class="panel-sub">available</div>
+  </div>
+  <div class="panel">
+    <div class="panel-label">Buying Power</div>
+    <div class="panel-value" id="acct-bp-val">--</div>
+    <div class="panel-sub">margin available</div>
+  </div>
+  <div class="panel">
+    <div class="panel-label">Equity</div>
+    <div class="panel-value" id="acct-equity-val">--</div>
+    <div class="panel-sub">total equity</div>
+  </div>
+  <div class="panel" id="acct-pdt-panel">
+    <div class="panel-label">Day Trades</div>
+    <div class="panel-value" id="acct-pdt-val">-- / 3</div>
+    <div class="panel-sub" id="acct-pdt-sub">this week (PDT)</div>
+  </div>
+</div>
+
+<!-- Middle Row: Positions + Open Orders -->
 <div class="grid grid-2">
   <div class="panel panel-full">
     <div class="panel-header">
@@ -64,7 +88,11 @@
   </div>
   <div class="panel panel-full">
     <div class="panel-header">
-      <h2>Recent Orders</h2>
+      <h2>Open Orders</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="badge" id="open-order-count">0</span>
+        <button class="btn" onclick="loadOpenOrders()" style="padding:2px 8px;font-size:11px">Refresh</button>
+      </div>
     </div>
     <div id="orders-table"></div>
   </div>
@@ -134,25 +162,21 @@ document.addEventListener('alpine:init', () => {
   }
 
   // ── Initial data loads ─────────────────────────────────────────
-  fetch('/api/portfolio').then(r => r.json()).then(applyPortfolio);
+  PaisaUtils.fetchJSON('/api/portfolio').then(applyPortfolio);
 
-  fetch('/api/regime').then(r => r.json()).then(applyRegime);
+  PaisaUtils.fetchJSON('/api/regime').then(applyRegime);
 
-  fetch('/api/health').then(r => r.json()).then(data => {
+  PaisaUtils.fetchJSON('/api/health').then(function(data) {
     const halted = data.kill_switches && (data.kill_switches.trading || data.kill_switches.all);
     const navMode = document.getElementById('nav-mode');
     if (navMode) navMode.textContent = halted ? 'HALTED' : '';
     applyHealth(data);
   });
 
-  fetch('/api/universe').then(r => r.json()).then(data => {
+  PaisaUtils.fetchJSON('/api/universe').then(function(data) {
     PaisaTables.setData('universe-table', data);
     const hasPrice = data.some(d => d.current_price != null);
     document.getElementById('price-feed-status').textContent = hasPrice ? 'prices live' : 'market closed';
-  });
-
-  fetch('/api/trades?limit=20').then(r => r.json()).then(data => {
-    PaisaTables.setData('orders-table', data);
   });
 
   // ── WebSocket handlers ─────────────────────────────────────────
@@ -160,9 +184,7 @@ document.addEventListener('alpine:init', () => {
   PaisaSocket.on('regime_change', applyRegime);
   PaisaSocket.on('system_health', applyHealth);
 
-  PaisaSocket.on('trade', () => {
-    fetch('/api/trades?limit=20').then(r => r.json()).then(d => PaisaTables.setData('orders-table', d));
-  });
+  PaisaSocket.on('trade', loadOpenOrders);
 
   PaisaSocket.on('price_update', function(data) {
     const table = PaisaTables.getInstance('universe-table');
@@ -188,7 +210,7 @@ document.addEventListener('alpine:init', () => {
 
   // Polling fallback: refresh prices every 30s
   setInterval(() => {
-    fetch('/api/universe').then(r => r.json()).then(data => {
+    PaisaUtils.fetchJSON('/api/universe').then(data => {
       const table = PaisaTables.getInstance('universe-table');
       if (!table) return;
       data.forEach(etf => {
@@ -198,6 +220,31 @@ document.addEventListener('alpine:init', () => {
       });
     });
   }, 30000);
+
+  // ── Broker account panel ────────────────────────────────────────
+  PaisaUtils.fetchJSON('/api/broker/account')
+    .then(function(data) {
+      if (data.error) { document.getElementById('account-row').style.display = 'none'; return; }
+      document.getElementById('acct-cash-val').textContent   = PaisaUtils.money(data.cash);
+      document.getElementById('acct-bp-val').textContent     = PaisaUtils.money(data.buying_power);
+      document.getElementById('acct-equity-val').textContent = PaisaUtils.money(data.equity);
+      const pdt    = data.day_trade_count;
+      const pdtEl  = document.getElementById('acct-pdt-val');
+      const pdtSub = document.getElementById('acct-pdt-sub');
+      pdtEl.textContent = pdt + ' / 3';
+      if (pdt >= 3) {
+        pdtEl.style.color = 'var(--red)';
+        pdtSub.textContent = 'PDT limit reached';
+      } else if (pdt === 2) {
+        pdtEl.style.color = 'var(--yellow)';
+        pdtSub.textContent = '1 day trade remaining';
+      }
+      if (data.trading_blocked || data.account_blocked) {
+        document.getElementById('account-row').style.borderColor = 'var(--red)';
+        PaisaUtils.toast('Alpaca account is blocked — trading is disabled', 'error');
+      }
+    })
+    .catch(function() { document.getElementById('account-row').style.display = 'none'; });
 });
 
 // ── Tabulator tables: no Alpine dependency, safe in DOMContentLoaded ──
@@ -214,14 +261,26 @@ document.addEventListener('DOMContentLoaded', function() {
   ]);
 
   PaisaTables.create('orders-table', [
-    {title: 'Symbol',    field: 'symbol',            width: 80},
-    {title: 'Side',      field: 'side',              width: 60},
-    {title: 'Notional',  field: 'requested_notional',formatter: 'money'},
-    {title: 'Fill',      field: 'fill_price',        formatter: 'money', formatterParams: {precision: 2}},
-    {title: 'Slip (bps)',field: 'slippage_bps',      formatter: PaisaTables.bpsFormatter},
-    {title: 'Status',    field: 'status'},
-    {title: 'Time',      field: 'trade_time',        formatter: PaisaTables.timeFormatter},
-  ]);
+    {title: 'Symbol',    field: 'symbol',       width: 80},
+    {title: 'Side',      field: 'side',         width: 55,
+      formatter: function(cell) {
+        const v = cell.getValue(); if (!v) return '--';
+        return '<span style="color:' + (v === 'buy' ? 'var(--green)' : 'var(--red)') + ';font-weight:600">' + v.toUpperCase() + '</span>';
+      }},
+    {title: 'Type',      field: 'type',         width: 70},
+    {title: 'Qty',       field: 'qty',          width: 70, hozAlign: 'right'},
+    {title: 'Notional',  field: 'notional',     width: 95, hozAlign: 'right',
+      formatter: function(cell) { const v = cell.getValue(); return v != null ? PaisaUtils.money(v) : '--'; }},
+    {title: 'Limit $',   field: 'limit_price',  width: 80, hozAlign: 'right',
+      formatter: function(cell) { const v = cell.getValue(); return v != null ? '$' + v.toFixed(2) : '--'; }},
+    {title: 'Status',    field: 'status',       width: 90},
+    {title: 'Submitted', field: 'submitted_at', formatter: PaisaTables.timeFormatter},
+    {title: '',          field: 'id',           width: 75, hozAlign: 'center', headerSort: false,
+      formatter: function(cell) {
+        const id = cell.getValue();
+        return '<button class="btn" onclick="cancelOrder(\'' + id + '\')" style="padding:2px 8px;font-size:11px;background:var(--red-dim);color:var(--red);border-color:var(--red-dim)">Cancel</button>';
+      }},
+  ], {index: 'id', maxHeight: '280px'});
 
   function activeToggleFormatter(cell) {
     const active = cell.getValue();
@@ -288,6 +347,28 @@ document.addEventListener('DOMContentLoaded', function() {
     {title: '1w %',   field: 'perf_1w',               width: 72,  hozAlign: 'right', formatter: PaisaTables.pctFormatter},
     {title: '1m %',   field: 'perf_1m',               width: 72,  hozAlign: 'right', formatter: PaisaTables.pctFormatter},
   ], {index: 'symbol', layout: 'fitDataTable', maxHeight: '480px'});
+
+  // Initial open orders load
+  loadOpenOrders();
 });
+
+function loadOpenOrders() {
+  PaisaUtils.fetchJSON('/api/broker/orders')
+    .then(function(data) {
+      if (!Array.isArray(data)) return;
+      PaisaTables.setData('orders-table', data);
+      document.getElementById('open-order-count').textContent = data.length;
+    })
+    .catch(function() {});   // silence — broker may not be configured yet
+}
+
+function cancelOrder(orderId) {
+  if (!confirm('Cancel order ' + orderId + '?')) return;
+  PaisaUtils.fetchJSON('/api/broker/orders/' + orderId, {method: 'DELETE'})
+    .then(function() {
+      PaisaUtils.toast('Order cancelled', 'info');
+      loadOpenOrders();
+    });
+}
 </script>
 {% endblock %}

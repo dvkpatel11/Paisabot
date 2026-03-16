@@ -92,6 +92,124 @@ def health():
     return jsonify(result)
 
 
+# ── broker account ──────────────────────────────────────────────────
+
+@api_bp.route('/broker/account', methods=['GET'])
+@api_login_required
+def broker_account():
+    """Live Alpaca account info — cached 30 s in Redis."""
+    cached = redis_client.get('cache:broker:account')
+    if cached:
+        return jsonify(json.loads(cached))
+
+    import os
+    key = os.environ.get('ALPACA_API_KEY', '')
+    if not key:
+        return jsonify({'error': 'ALPACA_API_KEY not set'}), 503
+    try:
+        from alpaca.trading.client import TradingClient
+        client = TradingClient(
+            key,
+            os.environ.get('ALPACA_SECRET_KEY', ''),
+            paper=os.environ.get('ALPACA_PAPER', 'true').lower() == 'true',
+        )
+        acct = client.get_account()
+        data = {
+            'cash':               float(acct.cash),
+            'buying_power':       float(acct.buying_power),
+            'portfolio_value':    float(acct.portfolio_value),
+            'equity':             float(acct.equity),
+            'day_trade_count':    int(acct.daytrade_count),
+            'pattern_day_trader': acct.pattern_day_trader,
+            'trading_blocked':    acct.trading_blocked,
+            'account_blocked':    acct.account_blocked,
+        }
+        redis_client.setex('cache:broker:account', 30, json.dumps(data))
+        return jsonify(data)
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 503
+
+
+# ── broker orders ────────────────────────────────────────────────────
+
+@api_bp.route('/broker/orders', methods=['GET'])
+@api_login_required
+def broker_orders():
+    """Open orders from Alpaca — not cached (must be real-time)."""
+    import os
+    key = os.environ.get('ALPACA_API_KEY', '')
+    if not key:
+        return jsonify([])
+    try:
+        from alpaca.trading.client import TradingClient
+        from alpaca.trading.requests import GetOrdersRequest
+        from alpaca.trading.enums import QueryOrderStatus
+        client = TradingClient(
+            key,
+            os.environ.get('ALPACA_SECRET_KEY', ''),
+            paper=os.environ.get('ALPACA_PAPER', 'true').lower() == 'true',
+        )
+        orders = client.get_orders(GetOrdersRequest(status=QueryOrderStatus.OPEN, limit=50))
+        return jsonify([{
+            'id':           str(o.id),
+            'symbol':       o.symbol,
+            'side':         o.side.value,
+            'type':         o.type.value,
+            'qty':          float(o.qty or 0),
+            'notional':     float(o.notional) if o.notional else None,
+            'limit_price':  float(o.limit_price) if o.limit_price else None,
+            'status':       o.status.value,
+            'submitted_at': o.submitted_at.isoformat() if o.submitted_at else None,
+        } for o in orders])
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 503
+
+
+@api_bp.route('/broker/orders/<order_id>', methods=['DELETE'])
+@api_login_required
+def cancel_broker_order(order_id):
+    """Cancel an open Alpaca order by ID."""
+    import os, uuid as _uuid
+    key = os.environ.get('ALPACA_API_KEY', '')
+    if not key:
+        return jsonify({'error': 'ALPACA_API_KEY not set'}), 503
+    try:
+        from alpaca.trading.client import TradingClient
+        client = TradingClient(
+            key,
+            os.environ.get('ALPACA_SECRET_KEY', ''),
+            paper=os.environ.get('ALPACA_PAPER', 'true').lower() == 'true',
+        )
+        client.cancel_order_by_id(_uuid.UUID(order_id))
+        return jsonify({'status': 'cancelled'})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+# ── position stop management ─────────────────────────────────────────
+
+@api_bp.route('/positions/<symbol>/stops', methods=['PATCH'])
+@api_login_required
+def update_position_stops(symbol):
+    """Set or clear stop_price / take_profit_price on an open position."""
+    from app.models.positions import Position
+    body = request.get_json(force=True) or {}
+    pos = Position.query.filter_by(symbol=symbol.upper(), status='open').first()
+    if not pos:
+        return jsonify({'error': f'No open position for {symbol.upper()}'}), 404
+    if 'stop_price' in body:
+        pos.stop_price = body['stop_price'] or None
+    if 'take_profit_price' in body:
+        pos.take_profit_price = body['take_profit_price'] or None
+    db.session.commit()
+    return jsonify({
+        'status':            'updated',
+        'symbol':            symbol.upper(),
+        'stop_price':        float(pos.stop_price) if pos.stop_price else None,
+        'take_profit_price': float(pos.take_profit_price) if pos.take_profit_price else None,
+    })
+
+
 # ── scores ─────────────────────────────────────────────────────────
 
 @api_bp.route('/scores', methods=['GET'])
@@ -268,13 +386,15 @@ def get_portfolio():
         {
             'symbol': p.symbol,
             'direction': p.direction,
-            'entry_price': _to_float(p.entry_price),
-            'current_price': _to_float(p.current_price),
-            'quantity': _to_float(p.quantity),
-            'weight': _to_float(p.weight),
-            'unrealized_pnl': _to_float(p.unrealized_pnl),
-            'sector': p.sector,
-            'high_watermark': _to_float(p.high_watermark),
+            'entry_price':      _to_float(p.entry_price),
+            'current_price':    _to_float(p.current_price),
+            'quantity':         _to_float(p.quantity),
+            'weight':           _to_float(p.weight),
+            'unrealized_pnl':   _to_float(p.unrealized_pnl),
+            'sector':           p.sector,
+            'high_watermark':   _to_float(p.high_watermark),
+            'stop_price':       _to_float(p.stop_price),
+            'take_profit_price': _to_float(p.take_profit_price),
         }
         for p in positions
     ]
@@ -1623,6 +1743,72 @@ def websocket_status():
     global _ws_listener
     running = _ws_listener.is_running if _ws_listener else False
     return jsonify({'running': running})
+
+
+# ── pipeline status ─────────────────────────────────────────────────
+
+@api_bp.route('/pipelines/status', methods=['GET'])
+@api_login_required
+def pipelines_status():
+    """Module health via Redis heartbeats + queue depths + today's throughput."""
+    now = datetime.now(timezone.utc)
+
+    MODULES = {
+        'market_data':      {'key': 'heartbeat:data',       'stale_min': 10},
+        'factor_engine':    {'key': 'heartbeat:factors',    'stale_min': 360},
+        'signal_engine':    {'key': 'heartbeat:signals',    'stale_min': 360},
+        'portfolio_engine': {'key': 'heartbeat:portfolio',  'stale_min': 360},
+        'risk_engine':      {'key': 'heartbeat:risk',       'stale_min': 10},
+        'execution_engine': {'key': 'heartbeat:execution',  'stale_min': 30},
+        'dashboard':        {'key': 'heartbeat:monitoring', 'stale_min': 5},
+    }
+
+    modules = {}
+    for mod_id, cfg in MODULES.items():
+        raw = redis_client.get(cfg['key'])
+        if raw is None:
+            modules[mod_id] = {'status': 'unknown', 'last_run': None, 'last_duration_ms': None}
+            continue
+        ts_str = raw.decode() if isinstance(raw, bytes) else raw
+        try:
+            ts = datetime.fromisoformat(ts_str)
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            age_min = (now - ts).total_seconds() / 60
+            status = 'ok' if age_min <= cfg['stale_min'] else 'stale'
+        except Exception:
+            status = 'error'
+        modules[mod_id] = {'status': status, 'last_run': ts_str, 'last_duration_ms': None}
+
+    # Queue depths
+    queues = {}
+    for q in ('channel:orders_proposed', 'channel:orders_approved', 'channel:risk_alerts'):
+        try:
+            queues[q.split(':')[1]] = redis_client.llen(q)
+        except Exception:
+            queues[q.split(':')[1]] = 0
+
+    # Today's throughput
+    throughput = {'bars_today': 0, 'signals_today': 0, 'trades_today': 0}
+    try:
+        from app.models.price_bars import PriceBar
+        from app.models.signals import Signal as _Sig
+        from app.models.trades import Trade as _Trade
+        from sqlalchemy import func as _func3
+        today = datetime.now(timezone.utc).date()
+        throughput['bars_today'] = db.session.query(
+            _func3.count(PriceBar.id)
+        ).filter(db.func.date(PriceBar.timestamp) == today).scalar() or 0
+        throughput['signals_today'] = db.session.query(
+            _func3.count(_Sig.id)
+        ).filter(db.func.date(_Sig.signal_time) == today).scalar() or 0
+        throughput['trades_today'] = db.session.query(
+            _func3.count(_Trade.id)
+        ).filter(db.func.date(_Trade.trade_time) == today).scalar() or 0
+    except Exception:
+        pass
+
+    return jsonify({'modules': modules, 'queues': queues, 'throughput': throughput})
 
 
 # ── performance recording ─────────────────────────────────────────

@@ -132,7 +132,7 @@ document.addEventListener('alpine:init', () => {
   }
 
   // Initial load — also populates kill switches (non-Alpine, remains vanilla)
-  fetch('/api/risk').then(r => r.json()).then(data => {
+  PaisaUtils.fetchJSON('/api/risk').then(data => {
     applyRiskMetrics(data);
 
     const container = document.getElementById('kill-switches');
@@ -151,7 +151,7 @@ document.addEventListener('alpine:init', () => {
 
   // Live risk updates on alert
   PaisaSocket.on('risk_alert', () => {
-    fetch('/api/risk').then(r => r.json()).then(applyRiskMetrics);
+    PaisaUtils.fetchJSON('/api/risk').then(applyRiskMetrics);
   });
 });
 
@@ -159,15 +159,39 @@ document.addEventListener('alpine:init', () => {
 document.addEventListener('DOMContentLoaded', function() {
 
   PaisaTables.create('exec-positions-table', [
-    {title: 'Symbol',    field: 'symbol',         width: 80},
-    {title: 'Direction', field: 'direction',       width: 70},
-    {title: 'Entry',     field: 'entry_price',    formatter: 'money', formatterParams: {precision: 2}},
-    {title: 'Current',   field: 'current_price',  formatter: 'money', formatterParams: {precision: 2}},
-    {title: 'Qty',       field: 'quantity'},
-    {title: 'Weight',    field: 'weight',         formatter: PaisaTables.pctFormatter},
-    {title: 'P&L',       field: 'unrealized_pnl', formatter: PaisaTables.pnlFormatter},
-    {title: 'HWM',       field: 'high_watermark', formatter: 'money', formatterParams: {precision: 2}},
-  ]);
+    {title: 'Symbol',    field: 'symbol',          width: 80, frozen: true},
+    {title: 'Dir',       field: 'direction',        width: 50},
+    {title: 'Entry',     field: 'entry_price',     hozAlign: 'right', formatter: 'money', formatterParams: {precision: 2}},
+    {title: 'Current',   field: 'current_price',   hozAlign: 'right', formatter: 'money', formatterParams: {precision: 2}},
+    {title: 'Qty',       field: 'quantity',         width: 70, hozAlign: 'right'},
+    {title: 'Weight',    field: 'weight',           width: 70, hozAlign: 'right', formatter: PaisaTables.pctFormatter},
+    {title: 'P&L',       field: 'unrealized_pnl',  hozAlign: 'right', formatter: PaisaTables.pnlFormatter},
+    {title: 'Stop $',    field: 'stop_price',      width: 85, hozAlign: 'right',
+      editor: 'number', editorParams: {min: 0, step: 0.01},
+      formatter: function(cell) {
+        const v = cell.getValue();
+        const price = cell.getRow().getData().current_price;
+        if (v == null) return '<span style="color:var(--text-muted)">--</span>';
+        const nearStop = price && Math.abs(price - v) / price < 0.02;
+        const color = nearStop ? 'var(--red)' : 'var(--yellow)';
+        return '<span style="color:' + color + '">$' + parseFloat(v).toFixed(2) + '</span>';
+      },
+      cellEdited: function(cell) {
+        const row = cell.getRow().getData();
+        updateStops(row.symbol, cell.getValue(), null);
+      }},
+    {title: 'TP $',      field: 'take_profit_price', width: 85, hozAlign: 'right',
+      editor: 'number', editorParams: {min: 0, step: 0.01},
+      formatter: function(cell) {
+        const v = cell.getValue();
+        if (v == null) return '<span style="color:var(--text-muted)">--</span>';
+        return '<span style="color:var(--green)">$' + parseFloat(v).toFixed(2) + '</span>';
+      },
+      cellEdited: function(cell) {
+        const row = cell.getRow().getData();
+        updateStops(row.symbol, null, cell.getValue());
+      }},
+  ], {maxHeight: '320px'});
 
   PaisaTables.create('exec-trades-table', [
     {title: 'Symbol',    field: 'symbol',             width: 80},
@@ -181,7 +205,7 @@ document.addEventListener('DOMContentLoaded', function() {
     {title: 'Time',      field: 'trade_time',         formatter: PaisaTables.timeFormatter},
   ]);
 
-  fetch('/api/portfolio').then(r => r.json()).then(data => {
+  PaisaUtils.fetchJSON('/api/portfolio').then(data => {
     if (data.positions) {
       PaisaTables.setData('exec-positions-table', data.positions);
       const sectors = {};
@@ -197,11 +221,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
-  fetch('/api/trades?limit=50').then(r => r.json()).then(data => {
+  PaisaUtils.fetchJSON('/api/trades?limit=50').then(data => {
     PaisaTables.setData('exec-trades-table', data);
   });
 
-  fetch('/api/universe').then(r => r.json()).then(etfs => {
+  PaisaUtils.fetchJSON('/api/universe').then(etfs => {
     const sel = document.getElementById('mt-symbol');
     etfs.forEach(e => {
       const opt = document.createElement('option');
@@ -216,19 +240,32 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   PaisaSocket.on('trade', () => {
-    fetch('/api/trades?limit=50').then(r => r.json()).then(d => PaisaTables.setData('exec-trades-table', d));
-    fetch('/api/portfolio').then(r => r.json()).then(data => {
+    PaisaUtils.fetchJSON('/api/trades?limit=50').then(d => PaisaTables.setData('exec-trades-table', d));
+    PaisaUtils.fetchJSON('/api/portfolio').then(data => {
       if (data.positions) PaisaTables.setData('exec-positions-table', data.positions);
     });
   });
 });
 
+function updateStops(symbol, stopPrice, tpPrice) {
+  const body = {};
+  if (stopPrice  !== null) body.stop_price         = stopPrice  || null;
+  if (tpPrice    !== null) body.take_profit_price   = tpPrice    || null;
+  PaisaUtils.fetchJSON('/api/positions/' + symbol + '/stops', {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  }).then(function() {
+    PaisaUtils.toast(symbol + ' stops updated', 'info');
+  });
+}
+
 function toggleSwitch(name, active) {
-  fetch('/api/control/' + name, {
+  PaisaUtils.fetchJSON('/api/control/' + name, {
     method: 'PATCH',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({active: active}),
-  }).then(() => location.reload());
+  }).then(function() { location.reload(); });
 }
 
 function submitManualTrade() {
@@ -249,28 +286,24 @@ function submitManualTrade() {
   }
 
   status.textContent = 'Submitting...';
-  fetch('/api/trades/manual', {
+  status.style.color = '';
+  PaisaUtils.fetchJSON('/api/trades/manual', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(body),
   })
-  .then(r => r.json())
   .then(data => {
     btn.disabled = false;
     if (data.error) {
       status.textContent = 'Error: ' + data.error;
       status.style.color = 'var(--red)';
     } else {
-      status.textContent = 'Trade submitted (ID: ' + data.trade_id + ')';
+      status.textContent = 'Submitted (ID: ' + data.trade_id + ')';
       status.style.color = 'var(--green)';
-      fetch('/api/trades?limit=50').then(r => r.json()).then(d => PaisaTables.setData('exec-trades-table', d));
+      PaisaUtils.fetchJSON('/api/trades?limit=50').then(d => PaisaTables.setData('exec-trades-table', d));
     }
   })
-  .catch(err => {
-    btn.disabled = false;
-    status.textContent = 'Failed: ' + err.message;
-    status.style.color = 'var(--red)';
-  });
+  .catch(function() { btn.disabled = false; });
 }
 </script>
 {% endblock %}

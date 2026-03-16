@@ -548,6 +548,50 @@ a:hover { text-decoration: underline; }
   border: none !important;
   font-size: 13px;
 }
+/* ── Toast Notifications ─────────────────────────────────────────── */
+#toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 380px;
+  pointer-events: none;
+}
+.toast {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 36px 10px 14px;
+  font-size: 13px;
+  color: var(--text-primary);
+  box-shadow: var(--shadow);
+  position: relative;
+  pointer-events: all;
+  animation: toast-in 0.18s ease;
+}
+.toast-error  { border-left: 3px solid var(--red); }
+.toast-info   { border-left: 3px solid var(--blue); }
+.toast-close {
+  position: absolute;
+  top: 7px;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+}
+.toast-close:hover { color: var(--text-primary); }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
 .tabulator .tabulator-header {
   background: var(--bg-tertiary) !important;
   border-bottom: 1px solid var(--border) !important;
