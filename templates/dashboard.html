@@ -7,7 +7,7 @@
 </div>
 
 <!-- Top Row: Summary Panels — driven by Alpine store 'dash' -->
-<div class="grid grid-4">
+<div class="grid grid-5">
 
   <div class="panel" x-data>
     <div class="panel-label">Portfolio Value</div>
@@ -21,6 +21,15 @@
       <span class="badge" :class="'badge-' + $store.dash.regimeColor" x-text="$store.dash.regimeName">--</span>
     </div>
     <div class="panel-sub" x-text="$store.dash.regimeConfidence">confidence --</div>
+  </div>
+
+  <div class="panel" id="vix-panel">
+    <div class="panel-label">VIX</div>
+    <div style="display:flex;align-items:baseline">
+      <span class="vix-value" id="vix-level">--</span>
+      <span class="vix-delta" id="vix-delta"></span>
+    </div>
+    <div class="vix-spark" id="vix-spark"></div>
   </div>
 
   <div class="panel" x-data>
@@ -166,12 +175,7 @@ document.addEventListener('alpine:init', () => {
 
   PaisaUtils.fetchJSON('/api/regime').then(applyRegime);
 
-  PaisaUtils.fetchJSON('/api/health').then(function(data) {
-    const halted = data.kill_switches && (data.kill_switches.trading || data.kill_switches.all);
-    const navMode = document.getElementById('nav-mode');
-    if (navMode) navMode.textContent = halted ? 'HALTED' : '';
-    applyHealth(data);
-  });
+  PaisaUtils.fetchJSON('/api/health').then(applyHealth);
 
   PaisaUtils.fetchJSON('/api/universe').then(function(data) {
     PaisaTables.setData('universe-table', data);
@@ -245,6 +249,38 @@ document.addEventListener('alpine:init', () => {
       }
     })
     .catch(function() { document.getElementById('account-row').style.display = 'none'; });
+
+  // ── VIX panel ─────────────────────────────────────────────────
+  PaisaUtils.fetchJSON('/api/market/vix')
+    .then(function(data) {
+      var el = document.getElementById('vix-level');
+      var deltaEl = document.getElementById('vix-delta');
+      if (data.current == null) { el.textContent = 'N/A'; return; }
+
+      var v = data.current;
+      el.textContent = v.toFixed(2);
+      el.className = 'vix-value ' + (v < 15 ? 'vix-green' : v < 25 ? 'vix-yellow' : v < 35 ? 'vix-red' : 'vix-dark');
+
+      if (data.delta != null) {
+        var sign = data.delta >= 0 ? '+' : '';
+        deltaEl.textContent = sign + data.delta.toFixed(2);
+        deltaEl.style.color = data.delta >= 0 ? 'var(--red)' : 'var(--green)';
+      }
+
+      // Sparkline
+      if (data.history_30d && data.history_30d.length > 1) {
+        Plotly.newPlot('vix-spark', [{
+          y: data.history_30d, type: 'scatter', mode: 'lines',
+          line: {color: v < 25 ? '#d29922' : '#f85149', width: 1.5},
+          fill: 'tozeroy', fillcolor: 'rgba(210,153,34,0.08)',
+        }], {
+          margin: {t: 0, r: 0, b: 0, l: 0}, height: 32,
+          paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+          xaxis: {visible: false}, yaxis: {visible: false},
+        }, {responsive: true, displayModeBar: false, staticPlot: true});
+      }
+    })
+    .catch(function() {});
 });
 
 // ── Tabulator tables: no Alpine dependency, safe in DOMContentLoaded ──
@@ -258,7 +294,7 @@ document.addEventListener('DOMContentLoaded', function() {
     {title: 'Weight',  field: 'weight',        formatter: PaisaTables.pctFormatter},
     {title: 'P&L',     field: 'unrealized_pnl',formatter: PaisaTables.pnlFormatter},
     {title: 'Sector',  field: 'sector'},
-  ]);
+  ], {placeholder: 'No open positions'});
 
   PaisaTables.create('orders-table', [
     {title: 'Symbol',    field: 'symbol',       width: 80},
@@ -280,7 +316,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const id = cell.getValue();
         return '<button class="btn" onclick="cancelOrder(\'' + id + '\')" style="padding:2px 8px;font-size:11px;background:var(--red-dim);color:var(--red);border-color:var(--red-dim)">Cancel</button>';
       }},
-  ], {index: 'id', maxHeight: '280px'});
+  ], {index: 'id', maxHeight: '280px', placeholder: 'No open orders'});
 
   function activeToggleFormatter(cell) {
     const active = cell.getValue();
@@ -346,7 +382,7 @@ document.addEventListener('DOMContentLoaded', function() {
     {title: 'Spread', field: 'spread_bps',            width: 75,  hozAlign: 'right', formatter: PaisaTables.bpsFormatter},
     {title: '1w %',   field: 'perf_1w',               width: 72,  hozAlign: 'right', formatter: PaisaTables.pctFormatter},
     {title: '1m %',   field: 'perf_1m',               width: 72,  hozAlign: 'right', formatter: PaisaTables.pctFormatter},
-  ], {index: 'symbol', layout: 'fitDataTable', maxHeight: '480px'});
+  ], {index: 'symbol', layout: 'fitDataTable', maxHeight: '480px', placeholder: 'No ETF data — run backfill from Pipelines page'});
 
   // Initial open orders load
   loadOpenOrders();

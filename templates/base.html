@@ -46,6 +46,12 @@
     </div>
   </nav>
 
+  <!-- System halted banner — shown on all pages when kill_switch:trading or kill_switch:all is set -->
+  <div id="system-banner">
+    TRADING HALTED
+    <span class="banner-detail" id="banner-detail"></span>
+  </div>
+
   <!-- Main Content -->
   <main class="main-content">
     {% block content %}{% endblock %}
@@ -93,6 +99,75 @@
 
   <!-- Toast container — rendered by PaisaUtils.toast() -->
   <div id="toast-container"></div>
+
+  <!-- Global system status: mode badge + halted banner — runs on every page -->
+  <script>
+  (function() {
+    var _lastFetch = 0;
+
+    function updateSystemStatus(data) {
+      var navMode = document.getElementById('nav-mode');
+      var banner  = document.getElementById('system-banner');
+      var detail  = document.getElementById('banner-detail');
+
+      var ks      = data.kill_switches || {};
+      var halted  = ks.trading || ks.all || ks.force_liquidate;
+      var mode    = (data.operational_mode || 'simulation').toLowerCase();
+
+      if (navMode) {
+        if (halted) {
+          navMode.textContent = 'HALTED';
+          navMode.className   = 'nav-mode mode-halted';
+        } else {
+          navMode.textContent = mode.toUpperCase();
+          navMode.className   = 'nav-mode mode-' + mode;
+        }
+      }
+
+      if (banner) {
+        banner.style.display = halted ? '' : 'none';
+        if (detail) {
+          var active = Object.keys(ks).filter(function(k) { return ks[k]; });
+          detail.textContent = active.length ? '— ' + active.join(', ') + ' switch active' : '';
+        }
+      }
+    }
+
+    function fetchStatus() {
+      var now = Date.now();
+      if (now - _lastFetch < 5000) return;   // debounce 5s
+      _lastFetch = now;
+      PaisaUtils.fetchJSON('/api/health')
+        .then(updateSystemStatus)
+        .catch(function() {});
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      fetchStatus();
+
+      // Re-evaluate whenever the server broadcasts health or config changes
+      PaisaSocket.on('system_health', function(data) {
+        // system_health may or may not carry kill_switch / mode; re-fetch to be safe
+        fetchStatus();
+      });
+
+      PaisaSocket.on('config_change', function(data) {
+        if (data && (data.category === 'system' || data.key === 'operational_mode')) {
+          _lastFetch = 0;   // force a fresh fetch
+          fetchStatus();
+        }
+      });
+
+      // Kill-switch toggles broadcast as risk_alerts with type 'kill_switch'
+      PaisaSocket.on('risk_alert', function(data) {
+        if (data && data.type === 'kill_switch') {
+          _lastFetch = 0;
+          fetchStatus();
+        }
+      });
+    });
+  })();
+  </script>
 
   {% block scripts %}{% endblock %}
 </body>
