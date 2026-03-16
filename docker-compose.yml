@@ -27,6 +27,43 @@ services:
       timeout: 5s
       retries: 5
 
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      FLASK_CONFIG: production
+      DATABASE_URL: postgresql://paisabot:paisabot@postgres:5432/paisabot
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  celery:
+    build: .
+    command: celery -A celery_worker worker --loglevel=info --concurrency=2
+    env_file:
+      - .env
+    environment:
+      FLASK_CONFIG: production
+      DATABASE_URL: postgresql://paisabot:paisabot@postgres:5432/paisabot
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:

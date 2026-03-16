@@ -20,6 +20,16 @@ class BaseConfig:
     _cors_raw = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:5000')
     CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_raw.split(',') if o.strip()]
 
+    # CSRF — enabled globally; API blueprint exempted in app factory
+    WTF_CSRF_ENABLED = True
+    WTF_CSRF_TIME_LIMIT = 3600  # 1 hour token validity
+
+    # Session cookie security defaults (overridden per-environment)
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    SESSION_COOKIE_SECURE = False  # overridden in production
+    PERMANENT_SESSION_LIFETIME = 3600  # 1 hour
+
 
 class DevelopmentConfig(BaseConfig):
     DEBUG = True
@@ -28,6 +38,7 @@ class DevelopmentConfig(BaseConfig):
 
 class TestingConfig(BaseConfig):
     TESTING = True
+    WTF_CSRF_ENABLED = False  # disable CSRF in test runner
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         'TEST_DATABASE_URL',
         'sqlite://'  # in-memory SQLite for tests without Docker
@@ -37,6 +48,8 @@ class TestingConfig(BaseConfig):
 
 class ProductionConfig(BaseConfig):
     DEBUG = False
+    SESSION_COOKIE_SECURE = True  # require HTTPS for cookies
+    SESSION_COOKIE_SAMESITE = 'Lax'
 
 
 config_map = {

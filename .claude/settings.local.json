@@ -116,7 +116,8 @@
       "Bash(python -m pytest tests/test_signals/test_signal_filter.py::TestSignalFilter::test_no_redis_passes_all -v --tb=long -s)",
       "Bash(python -m pytest tests/test_risk/test_liquidity_monitor.py::TestCheckSymbol::test_cached_shock_flag tests/test_risk/test_liquidity_monitor.py::TestShockFlag::test_is_shocked_helper tests/test_risk/test_continuous_monitor.py::TestReentry::test_halted_eligible tests/test_risk/test_correlation_monitor.py::TestCorrelationConsecutive::test_three_consecutive_days_force_diversify --tb=long)",
       "Bash(python -m pytest tests/test_risk/test_pre_trade_gate.py::TestLiquidityShock::test_liquidity_shock_blocks_buy tests/test_risk/test_pre_trade_gate.py::TestPreTradePublishing::test_blocked_orders_logged_to_alerts tests/test_risk/test_pre_trade_gate.py::TestBatchEvaluation::test_mixed_batch --tb=short)",
-      "Bash(ls -la /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/sad-kepler/*.py)"
+      "Bash(ls -la /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/sad-kepler/*.py)",
+      "Bash(python -m pytest --tb=short -q --co)"
     ]
   }
 }

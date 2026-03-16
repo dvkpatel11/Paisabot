@@ -3,7 +3,7 @@ import os
 
 import redis as redis_lib
 import structlog
-from flask import Flask
+from flask import Flask, jsonify, render_template
 
 from config import config_map
 
@@ -76,6 +76,43 @@ def create_app(config_name: str = 'development') -> Flask:
         decode_responses=True,
     )
 
+    # CSRF protection
+    from flask_wtf.csrf import CSRFProtect
+    csrf = CSRFProtect()
+    csrf.init_app(app)
+
+    # Security headers (disabled in testing to avoid HTTPS redirect issues)
+    if config_name != 'testing':
+        try:
+            from flask_talisman import Talisman
+            csp = {
+                'default-src': "'self'",
+                'script-src': [
+                    "'self'",
+                    "'unsafe-inline'",
+                    'cdn.socket.io',
+                    'cdn.plot.ly',
+                    'cdn.jsdelivr.net',
+                ],
+                'style-src': [
+                    "'self'",
+                    "'unsafe-inline'",
+                    'fonts.googleapis.com',
+                    'cdn.jsdelivr.net',
+                ],
+                'font-src': ["'self'", 'fonts.gstatic.com'],
+                'connect-src': ["'self'", 'ws:', 'wss:'],
+                'img-src': ["'self'", 'data:'],
+            }
+            Talisman(
+                app,
+                content_security_policy=csp,
+                force_https=(config_name == 'production'),
+                session_cookie_secure=(config_name == 'production'),
+            )
+        except ImportError:
+            app.logger.warning('flask-talisman not installed — security headers disabled')
+
     # Flask-Login
     from app.auth import login_manager
     login_manager.init_app(app)
@@ -89,6 +126,7 @@ def create_app(config_name: str = 'development') -> Flask:
 
     from app.api import api_bp
     app.register_blueprint(api_bp, url_prefix='/api')
+    csrf.exempt(api_bp)  # API uses token auth, not CSRF cookies
 
     from app.views import views_bp
     app.register_blueprint(views_bp)
@@ -107,7 +145,45 @@ def create_app(config_name: str = 'development') -> Flask:
         bridge = RedisBridge(ext.redis_client, socketio)
         bridge.start()
 
+    # Error handlers
+    _register_error_handlers(app)
+
     return app
+
+
+def _register_error_handlers(app: Flask) -> None:
+    """Register global error handlers returning JSON for API, HTML otherwise."""
+
+    def _wants_json() -> bool:
+        from flask import request
+        return (
+            request.path.startswith('/api/')
+            or request.accept_mimetypes.best == 'application/json'
+        )
+
+    @app.errorhandler(400)
+    def bad_request(e):
+        if _wants_json():
+            return jsonify(error='bad_request', message=str(e)), 400
+        return render_template('errors/400.html'), 400
+
+    @app.errorhandler(403)
+    def forbidden(e):
+        if _wants_json():
+            return jsonify(error='forbidden', message=str(e)), 403
+        return render_template('errors/403.html'), 403
+
+    @app.errorhandler(404)
+    def not_found(e):
+        if _wants_json():
+            return jsonify(error='not_found', message=str(e)), 404
+        return render_template('errors/404.html'), 404
+
+    @app.errorhandler(500)
+    def internal_error(e):
+        if _wants_json():
+            return jsonify(error='internal_server_error', message='An unexpected error occurred'), 500
+        return render_template('errors/500.html'), 500
 
 
 def _configure_logging():
