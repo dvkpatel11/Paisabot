@@ -9,8 +9,9 @@ class TestFactorRegistry:
         enabled = registry.get_enabled_factors()
         assert 'trend_score' in enabled
         assert 'volatility_regime' in enabled
-        assert 'dispersion_score' in enabled
         assert 'correlation_index' in enabled
+        # Dispersion removed from active composite
+        assert 'dispersion_score' not in enabled
 
     def test_compute_all(self, sample_price_data, db_session):
         registry = FactorRegistry()

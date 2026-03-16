@@ -301,7 +301,7 @@ class SignalGenerator:
                     volatility_score=factors.get('volatility_regime'),
                     sentiment_score=factors.get('sentiment_score'),
                     breadth_score=factors.get('breadth_score'),
-                    dispersion_score=factors.get('dispersion_score'),
+                    # dispersion_score removed from active composite
                     liquidity_score=factors.get('liquidity_score'),
                     regime=regime,
                     regime_confidence=confidence,

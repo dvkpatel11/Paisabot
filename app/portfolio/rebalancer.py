@@ -86,6 +86,7 @@ class RebalanceEngine:
                 'target_weight': round(target, 6),
                 'current_weight': round(current, 6),
                 'delta_weight': round(delta, 6),
+                'ref_price': self._get_ref_price(sym),
             })
 
         # Sells first to free up cash
@@ -100,6 +101,29 @@ class RebalanceEngine:
         )
 
         return orders
+
+    # ── helpers ────────────────────────────────────────────────────
+
+    def _get_ref_price(self, symbol: str) -> float | None:
+        """Look up the latest mid/close price for *symbol*.
+
+        Used as ``ref_price`` on order dicts so that simulated fills in
+        research mode have a price source even when the Redis mid-price
+        cache is empty.
+
+        Lookup order:
+          1. Redis ``cache:mid_prices`` hash (set by market data layer).
+          2. ``None`` — the execution layer already handles this gracefully.
+        """
+        if self._redis is None:
+            return None
+        try:
+            val = self._redis.hget('cache:mid_prices', symbol)
+            if val is not None:
+                return float(val.decode() if isinstance(val, bytes) else val)
+        except (ValueError, TypeError):
+            pass
+        return None
 
     def run_rebalance_cycle(
         self,

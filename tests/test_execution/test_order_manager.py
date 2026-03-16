@@ -110,7 +110,7 @@ class TestOrderManagerOperationalModes:
     def test_research_mode_simulates_fill(self, redis):
         redis.hset('config:system', 'operational_mode', 'research')
         manager = OrderManager(broker=None, redis_client=redis)
-        order = {'symbol': 'XLK', 'side': 'buy', 'notional': 5000.0}
+        order = {'symbol': 'XLK', 'side': 'buy', 'notional': 5000.0, 'ref_price': 200.0}
         result = manager.execute_order(order)
         assert result['status'] == 'filled'
         assert result['reason'] == 'simulated'
@@ -181,6 +181,84 @@ class TestOrderManagerQueue:
         assert results is not None
         assert len(results) == 1
         assert results[0]['status'] == 'filled'
+
+
+class TestResearchModeCostBreakdown:
+    """Tests for research-mode simulated fills with cost breakdown."""
+
+    @pytest.fixture
+    def redis(self):
+        r = fakeredis.FakeRedis()
+        r.hset('config:system', 'operational_mode', 'research')
+        return r
+
+    @pytest.fixture
+    def manager(self, redis):
+        return OrderManager(broker=None, redis_client=redis)
+
+    def test_result_includes_cost_breakdown(self, manager):
+        order = {'symbol': 'SPY', 'side': 'buy', 'notional': 5000.0, 'ref_price': 450.0}
+        result = manager.execute_order(order)
+        assert result['status'] == 'filled'
+        assert 'cost_breakdown' in result
+        bd = result['cost_breakdown']
+        assert 'half_spread_bps' in bd
+        assert 'market_impact_bps' in bd
+        assert 'total_bps' in bd
+        assert bd['total_bps'] == round(bd['half_spread_bps'] + bd['market_impact_bps'], 4)
+
+    def test_result_has_operational_mode(self, manager):
+        order = {'symbol': 'SPY', 'side': 'buy', 'notional': 5000.0, 'ref_price': 450.0}
+        result = manager.execute_order(order)
+        assert result['operational_mode'] == 'research'
+
+    def test_ref_price_fallback_when_no_cache(self, redis):
+        """When Redis mid-price cache is empty, ref_price on the order
+        is used as the mid price for the simulated fill."""
+        manager = OrderManager(broker=None, redis_client=redis)
+        order = {
+            'symbol': 'XLK', 'side': 'buy', 'notional': 5000.0,
+            'ref_price': 200.0,
+        }
+        result = manager.execute_order(order)
+        assert result['status'] == 'filled'
+        assert result['mid_at_submission'] == 200.0
+        assert result['fill_price'] > 200.0  # buy fills above mid
+
+    def test_no_price_at_all_errors(self, redis):
+        """No cache, no ref_price → error."""
+        manager = OrderManager(broker=None, redis_client=redis)
+        order = {'symbol': 'XLK', 'side': 'buy', 'notional': 5000.0}
+        result = manager.execute_order(order)
+        assert result['status'] == 'error'
+        assert result['reason'] == 'no_price_for_simulation'
+
+
+class TestRebalanceKillSwitch:
+    """Tests that kill_switch:rebalance blocks execution."""
+
+    @pytest.fixture
+    def redis(self):
+        r = fakeredis.FakeRedis()
+        r.hset('config:system', 'operational_mode', 'live')
+        return r
+
+    @pytest.fixture
+    def manager(self, mock_broker, redis):
+        return OrderManager(broker=mock_broker, redis_client=redis)
+
+    def test_rebalance_kill_switch_blocks(self, manager, redis):
+        redis.set('kill_switch:rebalance', '1')
+        order = {'symbol': 'XLK', 'side': 'buy', 'notional': 5000.0}
+        result = manager.execute_order(order)
+        assert result['status'] == 'blocked'
+        assert result['reason'] == 'kill_switch_active'
+
+    def test_rebalance_kill_switch_inactive_allows(self, manager, redis):
+        redis.set('kill_switch:rebalance', '0')
+        order = {'symbol': 'XLK', 'side': 'buy', 'notional': 5000.0}
+        result = manager.execute_order(order)
+        assert result['status'] == 'filled'
 
 
 class TestNotionalToQty:

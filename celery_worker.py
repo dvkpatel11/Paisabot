@@ -23,23 +23,20 @@ def make_celery(app=None):
         'task_max_retries': 3,
         'task_routes': {
             'app.execution.*': {'queue': 'execution'},
+            'app.pipeline.stage_execute': {'queue': 'execution'},
             'app.data.*': {'queue': 'market_data'},
             'app.factors.sentiment.*': {'queue': 'sentiment'},
         },
-        # Per-task overrides for long-running EOD jobs that exceed the default 5-min limit.
-        # EOD factor computation (20+ ETFs + FinBERT) needs up to ~20 min.
-        # Pipeline orchestration needs up to ~15 min.
+        # Per-task time-limit overrides for long-running EOD jobs.
+        # Pipeline stages have individual limits on their task decorators.
         'task_annotations': {
             'app.data.compute_all_factors': {
                 'soft_time_limit': 1200,
                 'time_limit': 1320,
             },
-            'app.pipeline.run_trading_pipeline': {
-                'soft_time_limit': 900,
-                'time_limit': 960,
-            },
         },
         'beat_schedule': {
+            # ── EOD data refresh ───────────────────────────────────
             'refresh-bars-daily': {
                 'task': 'app.data.refresh_all_bars',
                 'schedule': crontab(hour=17, minute=0),
@@ -52,18 +49,26 @@ def make_celery(app=None):
                 'task': 'app.data.refresh_vix',
                 'schedule': crontab(hour=17, minute=30),
             },
+            'refresh-cboe-put-call-daily': {
+                'task': 'app.data.refresh_cboe_put_call',
+                'schedule': crontab(hour=17, minute=45),
+            },
+            # ── Factor computation ─────────────────────────────────
             'compute-factors-daily': {
                 'task': 'app.data.compute_all_factors',
                 'schedule': crontab(hour=18, minute=0),
             },
-            'run-trading-pipeline-daily': {
-                'task': 'app.pipeline.run_trading_pipeline',
+            # ── Trading pipeline (chained stages) ──────────────────
+            'launch-pipeline-daily': {
+                'task': 'app.pipeline.launch_pipeline',
                 'schedule': crontab(hour=18, minute=15),
             },
+            # ── Post-trade ─────────────────────────────────────────
             'record-performance-daily': {
                 'task': 'app.data.record_daily_performance',
                 'schedule': crontab(hour=18, minute=30),
             },
+            # ── Continuous risk monitoring ──────────────────────────
             'continuous-risk-monitor': {
                 'task': 'app.risk.run_continuous_monitor',
                 'schedule': crontab(minute='*/5'),

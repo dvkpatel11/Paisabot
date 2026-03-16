@@ -13,12 +13,13 @@ from app.models.signals import Signal
 from app.pipeline.orchestrator import PipelineOrchestrator
 
 
-def _seed_universe(db_session):
+def _seed_universe(db_session, in_active_set=True):
     """Seed 3 ETFs for testing."""
     for sym, sector in [('SPY', 'Broad'), ('QQQ', 'Tech'), ('XLE', 'Energy')]:
         etf = ETFUniverse(
             symbol=sym, name=sym, sector=sector,
             is_active=True,
+            in_active_set=in_active_set,
         )
         db_session.add(etf)
     db_session.commit()
@@ -61,7 +62,18 @@ def _seed_signals(redis_mock):
 
 
 class TestPipelineOrchestrator:
+    def test_no_active_set_returns_early(self, db_session, redis_mock):
+        """Pipeline stops if no ETFs have in_active_set=True."""
+        orchestrator = PipelineOrchestrator(redis_mock, db_session)
+        result = orchestrator.run()
+
+        assert result['status'] == 'stopped'
+        assert result['reason'] == 'no_etfs_in_active_set'
+
     def test_no_signals_returns_early(self, db_session, redis_mock):
+        """Pipeline stops if active set exists but no signals available."""
+        _seed_universe(db_session)
+
         orchestrator = PipelineOrchestrator(redis_mock, db_session)
         result = orchestrator.run()
 

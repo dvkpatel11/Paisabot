@@ -81,11 +81,13 @@ class TestSignalFilter:
         ok, reason = f.is_tradable('SPY', adv_m=5.0, spread_bps=50.0)
         assert reason == 'kill_switch_active'
 
-    def test_no_redis_passes_all(self):
-        """Without Redis, all checks pass (no kill switches, no staleness)."""
+    def test_no_redis_blocks_on_staleness(self):
+        """Without Redis, factor staleness fails safe (blocks signals)."""
         f = SignalFilter(redis_client=None)
         ok, reason = f.is_tradable('SPY', adv_m=50.0, spread_bps=2.0)
-        assert ok is True
+        # No Redis → can't verify factor freshness → fail-safe blocks
+        assert ok is False
+        assert reason == 'factor_data_stale'
 
     def test_custom_adv_threshold_from_redis(self, filter):
         f, redis = filter

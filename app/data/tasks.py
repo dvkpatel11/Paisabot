@@ -92,7 +92,11 @@ def refresh_daily_bars(self, symbol: str):
 
 @celery.task(name='app.data.refresh_vix', bind=True, max_retries=3)
 def refresh_vix(self):
-    """Refresh the latest VIX value from FRED and cache in Redis."""
+    """Refresh VIX latest value + 252-day history from FRED, cache in Redis.
+
+    Populates both `vix:latest` and `vix:history_252` so the volatility
+    factor can percentile-rank without hitting FRED on every compute cycle.
+    """
     from app import create_app
     app = create_app()
     with app.app_context():
@@ -101,12 +105,37 @@ def refresh_vix(self):
 
         try:
             provider = VIXProvider(redis_client=redis_client)
-            vix = provider.get_latest_vix()
-            logger.info('vix_refreshed', value=vix)
-            return {'vix': vix}
+            result = provider.refresh()
+            logger.info('vix_refreshed', **result)
+            return result
 
         except Exception as exc:
             logger.error('vix_refresh_failed', error=str(exc))
+            raise self.retry(exc=exc)
+
+
+@celery.task(name='app.data.refresh_cboe_put_call', bind=True, max_retries=3)
+def refresh_cboe_put_call(self):
+    """Refresh CBOE equity put/call ratio and cache in Redis.
+
+    Fetches aggregate P/C ratio from CBOE (with FRED fallback),
+    computes 10-day MA, and populates per-symbol Redis keys
+    so the sentiment factor's options_score component is live.
+    """
+    from app import create_app
+    app = create_app()
+    with app.app_context():
+        from app.data.cboe_provider import CBOEPutCallProvider
+        from app.extensions import redis_client
+
+        try:
+            provider = CBOEPutCallProvider(redis_client=redis_client)
+            result = provider.refresh()
+            logger.info('cboe_pc_refreshed', **result)
+            return result
+
+        except Exception as exc:
+            logger.error('cboe_pc_refresh_failed', error=str(exc))
             raise self.retry(exc=exc)
 
 

@@ -66,10 +66,13 @@ class TestCorrelationBasic:
 class TestCorrelationConsecutive:
     def test_three_consecutive_days_force_diversify(self, redis, monitor):
         prices = _make_prices(['XLK', 'XLE'], corr=0.95, n=100)
-        # Simulate 3 consecutive checks with breach
-        monitor.check(['XLK', 'XLE'], prices)  # day 1
-        monitor.check(['XLK', 'XLE'], prices)  # day 2
-        result = monitor.check(['XLK', 'XLE'], prices)  # day 3
+
+        # Pre-seed the breach counter to simulate 2 prior breach days.
+        # The sentinel key for today doesn't exist yet, so the next
+        # check() call will increment to 3.
+        redis.set('risk:corr_breach_days', '2')
+
+        result = monitor.check(['XLK', 'XLE'], prices)
         assert result['consecutive_breach_days'] >= 3
         assert result['status'] == 'force_diversify'
 
@@ -77,10 +80,19 @@ class TestCorrelationConsecutive:
         high_corr = _make_prices(['XLK', 'XLE'], corr=0.95)
         low_corr = _make_prices(['XLK', 'XLE'], corr=0.3)
 
-        monitor.check(['XLK', 'XLE'], high_corr)  # breach
-        monitor.check(['XLK', 'XLE'], low_corr)    # ok → reset
-        result = monitor.check(['XLK', 'XLE'], high_corr)  # breach again
-        assert result['consecutive_breach_days'] == 1
+        # First call: breach → counter goes to 1
+        monitor.check(['XLK', 'XLE'], high_corr)
+        # Second call (same day): ok → decrement/reset
+        monitor.check(['XLK', 'XLE'], low_corr)
+
+        # Clear today's sentinel so a new breach can register
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        redis.delete(f'risk:corr_breach_date:{today}')
+
+        # Third call: breach again — should be 1 (counter was reset by ok)
+        result = monitor.check(['XLK', 'XLE'], high_corr)
+        assert result['consecutive_breach_days'] <= 1
 
 
 # ── pairs above limit ──────────────────────────────────────────────

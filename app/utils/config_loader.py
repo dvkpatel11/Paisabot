@@ -56,7 +56,7 @@ class ConfigLoader:
     def is_kill_switch_active(self, switch: str) -> bool:
         """Check kill switch Redis key (not under config:)."""
         val = self.redis.get(f'kill_switch:{switch}')
-        return val == '1'
+        return val in ('1', b'1')
 
     def set_kill_switch(self, switch: str, active: bool):
         """Set or clear a kill switch."""

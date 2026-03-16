@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import structlog
 
 from app.execution.broker_base import BrokerBase, BrokerOrder
+from app.execution.cost_model import TransactionCostModel
 from app.execution.fill_monitor import FillMonitor
 from app.execution.slippage_tracker import SlippageTracker
 
@@ -38,6 +39,7 @@ class OrderManager:
         self._redis = redis_client
         self._config = config_loader
         self._slippage = SlippageTracker(config_loader)
+        self._cost_model = TransactionCostModel(self._slippage, config_loader)
         self._fill_monitor = (
             FillMonitor(broker) if broker is not None else None
         )
@@ -271,9 +273,9 @@ class OrderManager:
     def _simulate_fill(self, order: dict, now: datetime) -> dict:
         """Simulate a fill for research/backtesting mode.
 
-        Uses the Almgren-Chriss cost model via SlippageTracker rather than
-        a flat slippage constant, and computes a realistic fill price from
-        the mid price stored in Redis (or the order's reference price).
+        Uses :class:`TransactionCostModel` (half-spread + Almgren-Chriss
+        market impact) to produce a realistic fill price from the mid price
+        stored in Redis (or the order's ``ref_price``).
         """
         symbol = order['symbol']
         side = order['side']
@@ -297,30 +299,35 @@ class OrderManager:
         daily_volume = self._get_daily_volume(symbol)
         volatility = self._get_volatility(symbol)
         exec_window = self._get_exec_window()
-
-        impact_bps = self._slippage.estimate_pretrade(
-            notional, mid_price, daily_volume, volatility, exec_window,
-        )
-
-        # Add half-spread cost
         spread_bps = self._get_config_float('universe', 'max_spread_bps', 1.0)
-        total_bps = impact_bps + spread_bps / 2
 
-        # Compute fill price (adverse direction)
-        direction = 1.0 if side == 'buy' else -1.0
-        fill_price = round(mid_price * (1 + direction * total_bps / 10_000), 4)
-        filled_qty = round(notional / fill_price, 6)
+        breakdown = self._cost_model.estimate(
+            symbol=symbol,
+            side=side,
+            notional=notional,
+            mid_price=mid_price,
+            daily_volume_usd=daily_volume,
+            volatility=volatility,
+            spread_bps=spread_bps,
+            execution_window_min=exec_window,
+        )
 
         result = self._result(
             order,
             status='filled',
             reason='simulated',
-            fill_price=fill_price,
-            filled_qty=filled_qty,
+            operational_mode='research',
+            fill_price=breakdown.fill_price,
+            filled_qty=breakdown.filled_qty,
             filled_at=now.isoformat(),
             mid_at_submission=mid_price,
-            estimated_slippage_bps=round(total_bps, 4),
-            actual_slippage_bps=round(total_bps, 4),
+            estimated_slippage_bps=breakdown.total_bps,
+            actual_slippage_bps=breakdown.total_bps,
+            cost_breakdown={
+                'half_spread_bps': breakdown.half_spread_bps,
+                'market_impact_bps': breakdown.market_impact_bps,
+                'total_bps': breakdown.total_bps,
+            },
             timestamp=now,
         )
 
@@ -330,9 +337,9 @@ class OrderManager:
             symbol=symbol,
             side=side,
             notional=notional,
-            fill_price=fill_price,
-            filled_qty=filled_qty,
-            slippage_bps=round(total_bps, 2),
+            fill_price=breakdown.fill_price,
+            filled_qty=breakdown.filled_qty,
+            slippage_bps=round(breakdown.total_bps, 2),
         )
 
         return result
@@ -354,9 +361,9 @@ class OrderManager:
     def _is_kill_switch_active(self) -> bool:
         if self._redis is None:
             return False
-        for switch in ('trading', 'all'):
+        for switch in ('trading', 'rebalance', 'all'):
             val = self._redis.get(f'kill_switch:{switch}')
-            if val == '1':
+            if val in ('1', b'1'):
                 return True
         return False
 

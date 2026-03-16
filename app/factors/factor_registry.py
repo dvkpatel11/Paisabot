@@ -7,7 +7,6 @@ import structlog
 from app.factors.base import FactorBase
 from app.factors.trend import TrendFactor
 from app.factors.volatility import VolatilityFactor
-from app.factors.dispersion import DispersionFactor
 from app.factors.correlation import CorrelationFactor
 from app.factors.breadth import BreadthFactor
 from app.factors.liquidity import LiquidityFactor
@@ -22,13 +21,15 @@ class FactorRegistry:
 
     Manages factor lifecycle, compute_all orchestration,
     and output to Redis + PostgreSQL.
+
+    Note: Dispersion factor (F04) removed from active composite.
+    Class remains in app/factors/dispersion.py for research use.
     """
 
     AVAILABLE_FACTORS: dict[str, type[FactorBase]] = {
         'trend_score': TrendFactor,
         'volatility_regime': VolatilityFactor,
         'sentiment_score': SentimentFactor,
-        'dispersion_score': DispersionFactor,
         'correlation_index': CorrelationFactor,
         'breadth_score': BreadthFactor,
         'liquidity_score': LiquidityFactor,

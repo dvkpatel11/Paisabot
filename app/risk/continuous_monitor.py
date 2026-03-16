@@ -176,7 +176,7 @@ class ContinuousMonitor:
             is_halted = self._config.is_kill_switch_active('trading')
         elif self._redis is not None:
             val = self._redis.get('kill_switch:trading')
-            is_halted = val == '1'
+            is_halted = val in ('1', b'1')
 
         if not is_halted:
             return {

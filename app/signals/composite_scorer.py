@@ -6,13 +6,18 @@ import structlog
 
 logger = structlog.get_logger()
 
+# Dispersion factor removed — its 15% redistributed:
+#   Trend:      0.25 → 0.30  (+5%)
+#   Volatility: 0.20 → 0.25  (+5%)
+#   Sentiment:  0.15 → 0.15  (unchanged)
+#   Breadth:    0.15 → 0.15  (unchanged)
+#   Liquidity:  0.10 → 0.15  (+5%)
 DEFAULT_WEIGHTS = {
-    'trend_score': 0.25,
-    'volatility_regime': 0.20,
+    'trend_score': 0.30,
+    'volatility_regime': 0.25,
     'sentiment_score': 0.15,
     'breadth_score': 0.15,
-    'dispersion_score': 0.15,
-    'liquidity_score': 0.10,
+    'liquidity_score': 0.15,
 }
 
 # Map config key names (weight_trend) to factor names (trend_score)
@@ -21,7 +26,6 @@ WEIGHT_KEY_MAP = {
     'weight_volatility': 'volatility_regime',
     'weight_sentiment': 'sentiment_score',
     'weight_breadth': 'breadth_score',
-    'weight_dispersion': 'dispersion_score',
     'weight_liquidity': 'liquidity_score',
 }
 

@@ -16,13 +16,12 @@ from app.models.system_config import SystemConfig
 
 # Full parameter catalog from research/admin_config_reference.md
 DEFAULTS = [
-    # --- weights ---
-    ('weights', 'weight_trend', '0.25', 'float', 'Trend factor weight'),
-    ('weights', 'weight_volatility', '0.20', 'float', 'Volatility regime weight'),
+    # --- weights (dispersion removed, 15% redistributed) ---
+    ('weights', 'weight_trend', '0.30', 'float', 'Trend factor weight'),
+    ('weights', 'weight_volatility', '0.25', 'float', 'Volatility regime weight'),
     ('weights', 'weight_sentiment', '0.15', 'float', 'Sentiment factor weight'),
     ('weights', 'weight_breadth', '0.15', 'float', 'Market breadth weight'),
-    ('weights', 'weight_dispersion', '0.15', 'float', 'Dispersion factor weight'),
-    ('weights', 'weight_liquidity', '0.10', 'float', 'Liquidity/slippage weight'),
+    ('weights', 'weight_liquidity', '0.15', 'float', 'Liquidity/slippage weight'),
     ('weights', 'weights_sum_constraint', 'enforce', 'string', 'Validate sum = 1.0 on save'),
 
     # --- universe ---
@@ -78,8 +77,8 @@ DEFAULTS = [
     ('data', 'price_data_provider', 'alpaca', 'string', 'alpaca / polygon / databento'),
     ('data', 'news_data_provider', 'finnhub', 'string', 'finnhub / newsapi / eodhd'),
     ('data', 'sentiment_model', 'finbert', 'string', 'finbert / vader'),
-    ('data', 'options_data_provider', 'polygon', 'string', 'polygon / tradier'),
-    ('data', 'vix_data_source', 'fred', 'string', 'cboe / polygon / fred'),
+    ('data', 'options_data_provider', 'cboe', 'string', 'cboe / tradier'),
+    ('data', 'vix_data_source', 'fred', 'string', 'fred / cboe'),
 
     # --- scheduling ---
     ('scheduling', 'bar_fetch_interval_sec', '60', 'int', 'Intraday bar refresh interval'),

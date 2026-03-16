@@ -157,7 +157,7 @@ class LiquidityMonitor:
         if self._redis is None:
             return False
         val = self._redis.get(f'liquidity_shock:{symbol}')
-        return val == '1'
+        return val in ('1', b'1')
 
     def _set_shock_flag(self, symbol: str) -> None:
         if self._redis is not None:

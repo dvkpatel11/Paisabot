@@ -1,7 +1,10 @@
-"""Pipeline orchestrator — chains signals → portfolio → risk → execution.
+"""Pipeline orchestrator — stage helpers for the Celery task chain.
 
-Runs as a single function call (sync via API or async via Celery).
-Passes data directly between stages rather than through Redis queues.
+Each public method corresponds to one pipeline stage and returns a
+serializable dict that the next stage in the chain receives as input.
+
+The monolithic ``run()`` method is kept for testing and manual invocation
+but delegates to the same stage methods used by the Celery chain.
 """
 from __future__ import annotations
 
@@ -15,15 +18,14 @@ logger = structlog.get_logger()
 
 
 class PipelineOrchestrator:
-    """Chains the full trading pipeline end-to-end.
+    """Stage-based pipeline that chains signals -> portfolio -> risk -> execution.
 
     Stages:
-        1. Load signals (from cache or DB)
-        2. Load current positions
-        3. Build portfolio targets (PortfolioManager)
-        4. Run pre-trade risk gate (RiskManager)
-        5. Execute approved orders (ExecutionEngine)
-        6. Record results
+        1. load_data     — fetch signals, positions, prices, regime, drawdown
+        2. portfolio      — run portfolio construction, produce orders
+        3. risk_gate      — pre-trade risk filter
+        4. execute        — submit approved orders to broker
+        5. record         — publish results to Redis / dashboard
     """
 
     def __init__(self, redis_client, db_session, config_loader=None, broker=None):
@@ -33,82 +35,133 @@ class PipelineOrchestrator:
         self._broker = broker
         self._log = logger.bind(component='pipeline_orchestrator')
 
-    def run(self) -> dict:
-        """Execute the full trading pipeline.
+    # ── stage 1 ──────────────────────────────────────────────────────
 
-        Returns summary dict with counts and status at each stage.
+    def load_data(self) -> dict:
+        """Stage 1: gather all inputs needed by downstream stages.
+
+        Returns a fully-serializable dict (JSON-safe types only) so it
+        can be passed through the Celery chain.
         """
         now = datetime.now(timezone.utc)
-        self._log.info('pipeline_start')
+        self._log.info('stage_load_data_start')
 
-        # 1. Load signals (only for active-set ETFs)
         active_symbols = self._load_active_set()
         if not active_symbols:
             self._log.warning('pipeline_empty_active_set')
-            return self._result(now, stage='active_set', reason='no_etfs_in_active_set')
+            return self._stopped(now, 'load_data', 'no_etfs_in_active_set')
 
         signals = self._load_signals()
         if not signals:
             self._log.info('pipeline_no_signals')
-            return self._result(now, stage='signals', reason='no_signals')
+            return self._stopped(now, 'load_data', 'no_signals')
 
-        # Filter signals to active set only
+        # Filter to active set
         signals = {s: v for s, v in signals.items() if s in active_symbols}
+        if not signals:
+            return self._stopped(now, 'load_data', 'no_active_signals')
 
-        # 2. Determine regime from signals
         regime = self._get_regime(signals)
-
-        # 3. Load current positions
         positions_weights, positions_list = self._load_positions()
-
-        # 4. Load portfolio value
         portfolio_value = self._get_portfolio_value(positions_list)
 
-        # 5. Load prices for optimization
         symbols = list(signals.keys())
         prices_df = self._load_prices_df(symbols)
         if prices_df.empty:
             self._log.warning('pipeline_no_price_data')
-            return self._result(now, stage='prices', reason='no_price_data')
+            return self._stopped(now, 'load_data', 'no_price_data')
 
-        # 6. Build sector map
         sector_map = self._build_sector_map()
-
-        # 7. Get current drawdown
         current_drawdown = self._get_current_drawdown()
 
-        # 8. Run portfolio construction
+        # Serialize prices_df to JSON-safe format (list of {date: price} per symbol)
+        prices_serialized = {
+            col: {str(idx): float(val) for idx, val in prices_df[col].dropna().items()}
+            for col in prices_df.columns
+        }
+
+        self._log.info(
+            'stage_load_data_complete',
+            n_signals=len(signals),
+            n_positions=len(positions_list),
+            regime=regime,
+        )
+
+        return {
+            'status': 'continue',
+            'stage': 'load_data',
+            'timestamp': now.isoformat(),
+            'signals': signals,
+            'positions_weights': positions_weights,
+            'positions_list': positions_list,
+            'portfolio_value': portfolio_value,
+            'prices_serialized': prices_serialized,
+            'regime': regime,
+            'sector_map': sector_map,
+            'current_drawdown': current_drawdown,
+        }
+
+    # ── stage 2 ──────────────────────────────────────────────────────
+
+    def portfolio(self, pipeline_data: dict) -> dict:
+        """Stage 2: run portfolio construction, produce rebalance orders."""
+        if pipeline_data.get('status') == 'stopped':
+            return pipeline_data
+
+        self._log.info('stage_portfolio_start')
+
+        # Reconstruct prices DataFrame from serialized form
+        prices_df = pd.DataFrame({
+            sym: pd.Series({k: v for k, v in vals.items()})
+            for sym, vals in pipeline_data['prices_serialized'].items()
+        })
+
         from app.portfolio.portfolio_manager import PortfolioManager
         pm = PortfolioManager(self._redis, self._config)
         portfolio_result = pm.run(
-            signals=signals,
-            current_positions=positions_weights,
-            portfolio_value=portfolio_value,
+            signals=pipeline_data['signals'],
+            current_positions=pipeline_data['positions_weights'],
+            portfolio_value=pipeline_data['portfolio_value'],
             prices_df=prices_df,
-            regime=regime,
-            sector_map=sector_map,
+            regime=pipeline_data['regime'],
+            sector_map=pipeline_data['sector_map'],
         )
 
         orders = portfolio_result.get('orders', [])
         if not orders:
-            self._log.info('pipeline_no_orders', regime=regime)
-            return self._result(
-                now, stage='portfolio', reason='no_orders',
-                n_signals=len(signals),
+            self._log.info('pipeline_no_orders', regime=pipeline_data['regime'])
+            return self._stopped(
+                datetime.now(timezone.utc), 'portfolio', 'no_orders',
+                n_signals=len(pipeline_data['signals']),
                 n_candidates=len(portfolio_result.get('candidates', [])),
-                regime=regime,
+                regime=pipeline_data['regime'],
             )
 
-        # 9. Run pre-trade risk gate
+        self._log.info('stage_portfolio_complete', n_orders=len(orders))
+
+        pipeline_data['orders'] = orders
+        pipeline_data['n_candidates'] = len(portfolio_result.get('candidates', []))
+        pipeline_data['stage'] = 'portfolio'
+        return pipeline_data
+
+    # ── stage 3 ──────────────────────────────────────────────────────
+
+    def risk_gate(self, pipeline_data: dict) -> dict:
+        """Stage 3: run pre-trade risk gate on proposed orders."""
+        if pipeline_data.get('status') == 'stopped':
+            return pipeline_data
+
+        self._log.info('stage_risk_gate_start', n_orders=len(pipeline_data['orders']))
+
         from app.risk.risk_manager import RiskManager
         rm = RiskManager(self._redis, self._config)
         gate_result = rm.pre_trade(
-            proposed_orders=orders,
-            current_positions=positions_list,
-            portfolio_value=portfolio_value,
-            current_drawdown=current_drawdown,
-            regime=regime,
-            sector_map=sector_map,
+            proposed_orders=pipeline_data['orders'],
+            current_positions=pipeline_data['positions_list'],
+            portfolio_value=pipeline_data['portfolio_value'],
+            current_drawdown=pipeline_data['current_drawdown'],
+            regime=pipeline_data['regime'],
+            sector_map=pipeline_data['sector_map'],
         )
 
         approved = gate_result.get('approved', [])
@@ -120,15 +173,39 @@ class PipelineOrchestrator:
                 blocked=len(blocked),
                 reasons=[o.get('block_reason') for o in blocked[:5]],
             )
-            return self._result(
-                now, stage='risk_gate', reason='all_blocked',
-                n_signals=len(signals),
-                n_orders=len(orders),
+            return self._stopped(
+                datetime.now(timezone.utc), 'risk_gate', 'all_blocked',
+                n_signals=len(pipeline_data['signals']),
+                n_orders=len(pipeline_data['orders']),
                 n_blocked=len(blocked),
-                regime=regime,
+                regime=pipeline_data['regime'],
             )
 
-        # 10. Execute approved orders
+        self._log.info(
+            'stage_risk_gate_complete',
+            n_approved=len(approved),
+            n_blocked=len(blocked),
+        )
+
+        pipeline_data['approved'] = approved
+        pipeline_data['blocked'] = blocked
+        pipeline_data['stage'] = 'risk_gate'
+        return pipeline_data
+
+    # ── stage 4 ──────────────────────────────────────────────────────
+
+    def execute(self, pipeline_data: dict) -> dict:
+        """Stage 4: execute approved orders via broker.
+
+        This stage has NO retry — retrying risks double-fills.
+        On failure the error callback sets kill_switch:rebalance.
+        """
+        if pipeline_data.get('status') == 'stopped':
+            return pipeline_data
+
+        approved = pipeline_data.get('approved', [])
+        self._log.info('stage_execute_start', n_approved=len(approved))
+
         from app.execution.execution_engine import ExecutionEngine
         engine = ExecutionEngine(
             broker=self._broker,
@@ -138,38 +215,76 @@ class PipelineOrchestrator:
         )
         exec_results = engine.execute_orders(approved)
 
-        n_filled = sum(1 for r in exec_results if r['status'] == 'filled')
-        n_skipped = sum(1 for r in exec_results if r['status'] == 'skipped')
+        n_filled = sum(1 for r in exec_results if r.get('status') == 'filled')
+        n_errors = sum(1 for r in exec_results if r.get('status') == 'error')
 
-        # 11. Publish pipeline summary
+        self._log.info(
+            'stage_execute_complete',
+            n_filled=n_filled,
+            n_errors=n_errors,
+        )
+
+        pipeline_data['exec_results'] = exec_results
+        pipeline_data['n_filled'] = n_filled
+        pipeline_data['n_errors'] = n_errors
+        pipeline_data['stage'] = 'execute'
+        return pipeline_data
+
+    # ── stage 5 ──────────────────────────────────────────────────────
+
+    def record(self, pipeline_data: dict) -> dict:
+        """Stage 5: publish pipeline summary to Redis + dashboard."""
+        self._log.info('stage_record_start')
+
         summary = {
-            'n_signals': len(signals),
-            'n_candidates': len(portfolio_result.get('candidates', [])),
-            'n_orders': len(orders),
-            'n_approved': len(approved),
-            'n_blocked': len(blocked),
-            'n_filled': n_filled,
-            'n_skipped': n_skipped,
-            'regime': regime,
-            'portfolio_value': portfolio_value,
-            'timestamp': now.isoformat(),
+            'status': pipeline_data.get('status', 'complete'),
+            'stage': pipeline_data.get('stage', 'record'),
+            'n_signals': len(pipeline_data.get('signals', {})),
+            'n_candidates': pipeline_data.get('n_candidates', 0),
+            'n_orders': len(pipeline_data.get('orders', [])),
+            'n_approved': len(pipeline_data.get('approved', [])),
+            'n_blocked': len(pipeline_data.get('blocked', [])),
+            'n_filled': pipeline_data.get('n_filled', 0),
+            'n_errors': pipeline_data.get('n_errors', 0),
+            'regime': pipeline_data.get('regime', 'unknown'),
+            'portfolio_value': pipeline_data.get('portfolio_value', 0),
+            'timestamp': pipeline_data.get('timestamp', datetime.now(timezone.utc).isoformat()),
         }
-        self._publish_summary(summary)
 
+        # Preserve reason for stopped pipelines
+        if pipeline_data.get('reason'):
+            summary['reason'] = pipeline_data['reason']
+
+        # Override status for completed pipelines
+        if summary['status'] != 'stopped':
+            summary['status'] = 'complete'
+
+        self._publish_summary(summary)
         self._log.info('pipeline_complete', **summary)
         return summary
 
-    # ── data loaders ─────────────────────────────────────────────
+    # ── monolithic run (kept for testing / manual use) ───────────────
+
+    def run(self) -> dict:
+        """Execute the full pipeline synchronously (delegates to stage methods).
+
+        Useful for testing and manual ``flask shell`` invocation.
+        """
+        data = self.load_data()
+        data = self.portfolio(data)
+        data = self.risk_gate(data)
+        data = self.execute(data)
+        return self.record(data)
+
+    # ── data loaders (private) ────────────────────────────────────────
 
     def _load_signals(self) -> dict[str, dict]:
         """Load latest signals from Redis cache or DB."""
-        # Try Redis cache first
         if self._redis:
             raw = self._redis.get('cache:signals:latest')
             if raw:
                 try:
                     groups = json.loads(raw)
-                    # Flatten grouped signals into {symbol: signal_dict}
                     signals = {}
                     for group_name, entries in groups.items():
                         for entry in entries:
@@ -181,7 +296,6 @@ class PipelineOrchestrator:
                 except (json.JSONDecodeError, TypeError):
                     pass
 
-        # Fall back to latest signals from DB
         from app.models.signals import Signal
         from sqlalchemy import func
 
@@ -202,11 +316,6 @@ class PipelineOrchestrator:
         }
 
     def _load_positions(self) -> tuple[dict[str, float], list[dict]]:
-        """Load current open positions from DB.
-
-        Returns:
-            (weights_dict, positions_list)
-        """
         from app.models.positions import Position
 
         positions = Position.query.filter_by(status='open').all()
@@ -224,7 +333,6 @@ class PipelineOrchestrator:
         return weights, pos_list
 
     def _load_prices_df(self, symbols: list[str], days: int = 252) -> pd.DataFrame:
-        """Build prices DataFrame from price_bars table."""
         from app.models.price_bars import PriceBar
         from sqlalchemy import desc
 
@@ -248,15 +356,9 @@ class PipelineOrchestrator:
         return pd.DataFrame(frames).dropna(how='all')
 
     def _get_portfolio_value(self, positions: list[dict]) -> float:
-        """Compute portfolio value from positions + initial capital.
-
-        Aggregates PnL in SQL to avoid loading the full position history
-        into memory — critical after months of trading with many closed positions.
-        """
         from app.extensions import db as _db
-        from sqlalchemy import func, text
+        from sqlalchemy import text
 
-        # Get initial capital from config
         initial_capital = 100_000.0
         if self._redis:
             raw = self._redis.hget('config:portfolio', 'initial_capital')
@@ -266,13 +368,11 @@ class PipelineOrchestrator:
                 except (ValueError, TypeError):
                     pass
 
-        # Aggregate realized PnL for all closed positions in one SQL query
         realized_row = _db.session.execute(
             text("SELECT COALESCE(SUM(realized_pnl), 0) FROM positions WHERE status = 'closed'")
         ).fetchone()
         realized = float(realized_row[0]) if realized_row else 0.0
 
-        # Aggregate unrealized PnL for open positions in one SQL query
         unrealized_row = _db.session.execute(
             text("SELECT COALESCE(SUM(unrealized_pnl), 0) FROM positions WHERE status = 'open'")
         ).fetchone()
@@ -281,8 +381,6 @@ class PipelineOrchestrator:
         return initial_capital + realized + unrealized
 
     def _get_regime(self, signals: dict[str, dict]) -> str:
-        """Extract regime from signals or Redis cache."""
-        # Check Redis first
         if self._redis:
             raw = self._redis.get('cache:regime:current')
             if raw:
@@ -292,7 +390,6 @@ class PipelineOrchestrator:
                 except (json.JSONDecodeError, TypeError):
                     pass
 
-        # Fall back to first signal's regime
         for sig in signals.values():
             regime = sig.get('regime')
             if regime and regime != 'unknown':
@@ -300,7 +397,6 @@ class PipelineOrchestrator:
         return 'consolidation'
 
     def _get_current_drawdown(self) -> float:
-        """Get latest drawdown from performance_metrics."""
         from app.models.performance import PerformanceMetric
 
         latest = (
@@ -313,7 +409,6 @@ class PipelineOrchestrator:
         return 0.0
 
     def _load_active_set(self) -> set[str]:
-        """Load symbols with in_active_set=True (the trading subset)."""
         from app.models.etf_universe import ETFUniverse
 
         etfs = ETFUniverse.query.filter_by(
@@ -324,13 +419,12 @@ class PipelineOrchestrator:
         return symbols
 
     def _build_sector_map(self) -> dict[str, str]:
-        """Load {symbol: sector} from full active universe (for constraints)."""
         from app.models.etf_universe import ETFUniverse
 
         etfs = ETFUniverse.query.filter_by(is_active=True).all()
         return {e.symbol: e.sector for e in etfs if e.sector}
 
-    # ── helpers ───────────────────────────────────────────────────
+    # ── helpers ───────────────────────────────────────────────────────
 
     def _publish_summary(self, summary: dict) -> None:
         if self._redis:
@@ -345,11 +439,11 @@ class PipelineOrchestrator:
                 self._log.error('pipeline_publish_failed', error=str(exc))
 
     @staticmethod
-    def _result(timestamp, stage: str, reason: str, **kwargs) -> dict:
+    def _stopped(timestamp, stage: str, reason: str, **kwargs) -> dict:
         return {
             'status': 'stopped',
             'stage': stage,
             'reason': reason,
-            'timestamp': timestamp.isoformat(),
+            'timestamp': timestamp.isoformat() if hasattr(timestamp, 'isoformat') else str(timestamp),
             **kwargs,
         }
