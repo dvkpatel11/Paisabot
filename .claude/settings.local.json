@@ -124,7 +124,8 @@
       "Bash(grep -n \"class.*Provider\" /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/pensive-fermi/app/data/*.py)",
       "Bash(grep -n \"class.*Sentiment\\\\|class.*Vix\\\\|class.*PriceBar\" /c/Users/deepv/Desktop/Projects/Paisabot/.claude/worktrees/pensive-fermi/app/models/*.py)",
       "Bash(python -c \"import py_compile; py_compile.compile\\(''app/views/routes.py'', doraise=True\\); py_compile.compile\\(''config.py'', doraise=True\\); print\\(''Python files OK''\\)\")",
-      "Bash(python -c \"import py_compile; py_compile.compile\\(''app/api/routes.py'', doraise=True\\); print\\(''API routes OK''\\)\")"
+      "Bash(python -c \"import py_compile; py_compile.compile\\(''app/api/routes.py'', doraise=True\\); print\\(''API routes OK''\\)\")",
+      "Bash(find C:UsersdeepvDesktopProjectsPaisabot.claudeworktreespensive-fermi -type f \\\\\\(-name *.yml -o -name *.yaml -o -name *.toml -o -name *.cfg -o -name *.ini -o -name Dockerfile* -o -name *requirements*.txt \\\\\\))"
     ]
   }
 }

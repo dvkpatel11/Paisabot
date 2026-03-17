@@ -2,8 +2,8 @@
 FROM python:3.11-slim AS builder
 
 WORKDIR /build
-COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+COPY requirements.txt requirements-prod.txt ./
+RUN pip install --no-cache-dir --prefix=/install -r requirements-prod.txt
 
 # ---------- Stage 2: runtime ----------
 FROM python:3.11-slim

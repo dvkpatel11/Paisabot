@@ -159,51 +159,51 @@ document.addEventListener('alpine:init', () => {
 document.addEventListener('DOMContentLoaded', function() {
 
   PaisaTables.create('exec-positions-table', [
-    {title: 'Symbol',    field: 'symbol',          width: 80, frozen: true},
-    {title: 'Dir',       field: 'direction',        width: 50},
-    {title: 'Entry',     field: 'entry_price',     hozAlign: 'right', formatter: 'money', formatterParams: {precision: 2}},
-    {title: 'Current',   field: 'current_price',   hozAlign: 'right', formatter: 'money', formatterParams: {precision: 2}},
+    {title: 'Symbol',    field: 'symbol',          width: 80, frozen: true, formatter: PaisaTables.symbolFormatter},
+    {title: 'Dir',       field: 'direction',        width: 65, formatter: PaisaTables.sideFormatter},
+    {title: 'Entry',     field: 'entry_price',     hozAlign: 'right', formatter: PaisaTables.moneyFormatter},
+    {title: 'Current',   field: 'current_price',   hozAlign: 'right', formatter: PaisaTables.moneyFormatter},
     {title: 'Qty',       field: 'quantity',         width: 70, hozAlign: 'right'},
     {title: 'Weight',    field: 'weight',           width: 70, hozAlign: 'right', formatter: PaisaTables.pctFormatter},
     {title: 'P&L',       field: 'unrealized_pnl',  hozAlign: 'right', formatter: PaisaTables.pnlFormatter},
     {title: 'Stop $',    field: 'stop_price',      width: 85, hozAlign: 'right',
       editor: 'number', editorParams: {min: 0, step: 0.01},
       formatter: function(cell) {
-        const v = cell.getValue();
-        const price = cell.getRow().getData().current_price;
-        if (v == null) return '<span style="color:var(--text-muted)">--</span>';
-        const nearStop = price && Math.abs(price - v) / price < 0.02;
-        const color = nearStop ? 'var(--red)' : 'var(--yellow)';
-        return '<span style="color:' + color + '">$' + parseFloat(v).toFixed(2) + '</span>';
+        var v = cell.getValue();
+        var price = cell.getRow().getData().current_price;
+        if (v == null) return '<span class="cell-muted">--</span>';
+        var nearStop = price && Math.abs(price - v) / price < 0.02;
+        var color = nearStop ? 'var(--red)' : 'var(--yellow)';
+        return '<span style="color:' + color + ';font-weight:600">$' + parseFloat(v).toFixed(2) + '</span>';
       },
       cellEdited: function(cell) {
-        const row = cell.getRow().getData();
+        var row = cell.getRow().getData();
         updateStops(row.symbol, cell.getValue(), null);
       }},
     {title: 'TP $',      field: 'take_profit_price', width: 85, hozAlign: 'right',
       editor: 'number', editorParams: {min: 0, step: 0.01},
       formatter: function(cell) {
-        const v = cell.getValue();
-        if (v == null) return '<span style="color:var(--text-muted)">--</span>';
-        return '<span style="color:var(--green)">$' + parseFloat(v).toFixed(2) + '</span>';
+        var v = cell.getValue();
+        if (v == null) return '<span class="cell-muted">--</span>';
+        return '<span class="cell-positive cell-bold">$' + parseFloat(v).toFixed(2) + '</span>';
       },
       cellEdited: function(cell) {
-        const row = cell.getRow().getData();
+        var row = cell.getRow().getData();
         updateStops(row.symbol, null, cell.getValue());
       }},
-  ], {maxHeight: '320px'});
+  ], {maxHeight: '320px', placeholder: 'No open positions'});
 
   PaisaTables.create('exec-trades-table', [
-    {title: 'Symbol',    field: 'symbol',             width: 80},
-    {title: 'Side',      field: 'side',               width: 50},
+    {title: 'Symbol',    field: 'symbol',             width: 80,  formatter: PaisaTables.symbolFormatter},
+    {title: 'Side',      field: 'side',               width: 65,  formatter: PaisaTables.sideFormatter},
     {title: 'Type',      field: 'order_type',         width: 70},
-    {title: 'Requested', field: 'requested_notional', formatter: 'money'},
-    {title: 'Filled',    field: 'filled_notional',    formatter: 'money'},
-    {title: 'Fill Price',field: 'fill_price',         formatter: 'money', formatterParams: {precision: 2}},
-    {title: 'Slippage',  field: 'slippage_bps',       formatter: PaisaTables.bpsFormatter},
-    {title: 'Status',    field: 'status'},
-    {title: 'Time',      field: 'trade_time',         formatter: PaisaTables.timeFormatter},
-  ]);
+    {title: 'Requested', field: 'requested_notional', hozAlign: 'right', formatter: PaisaTables.moneyFormatter},
+    {title: 'Filled',    field: 'filled_notional',    hozAlign: 'right', formatter: PaisaTables.moneyFormatter},
+    {title: 'Fill Price',field: 'fill_price',         hozAlign: 'right', formatter: PaisaTables.moneyFormatter},
+    {title: 'Slippage',  field: 'slippage_bps',       hozAlign: 'right', formatter: PaisaTables.bpsFormatter},
+    {title: 'Status',    field: 'status',             formatter: PaisaTables.statusFormatter},
+    {title: 'Time',      field: 'trade_time',         formatter: PaisaTables.dateTimeFormatter},
+  ], {placeholder: 'No trades yet'});
 
   PaisaUtils.fetchJSON('/api/portfolio').then(data => {
     if (data.positions) {

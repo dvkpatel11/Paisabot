@@ -86,9 +86,9 @@ var _factorDays = 60;
 
 document.addEventListener('DOMContentLoaded', function() {
   var signalCols = [
-    {title: 'Symbol', field: 'symbol', width: 80},
+    {title: 'Symbol', field: 'symbol', width: 80, formatter: PaisaTables.symbolFormatter},
     {title: 'Score', field: 'composite_score', formatter: PaisaTables.scoreFormatter},
-    {title: 'Regime', field: 'regime'},
+    {title: 'Regime', field: 'regime', formatter: PaisaTables.regimeFormatter},
   ];
 
   PaisaTables.create('long-signals', signalCols, {placeholder: 'No long signals'});

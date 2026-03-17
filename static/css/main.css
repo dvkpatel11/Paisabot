@@ -579,6 +579,7 @@ a:hover { text-decoration: underline; }
   border: none !important;
   font-size: 13px;
 }
+
 /* ── Toast Notifications ─────────────────────────────────────────── */
 #toast-container {
   position: fixed;
@@ -625,22 +626,116 @@ a:hover { text-decoration: underline; }
 
 .tabulator .tabulator-header {
   background: var(--bg-tertiary) !important;
-  border-bottom: 1px solid var(--border) !important;
+  border-bottom: 2px solid var(--border-light) !important;
 }
 .tabulator .tabulator-header .tabulator-col {
   background: transparent !important;
   border-right: 1px solid var(--border) !important;
+  color: var(--text-secondary) !important;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
+.tabulator .tabulator-header .tabulator-col .tabulator-col-content {
+  padding: 8px 10px !important;
+}
+.tabulator .tabulator-header .tabulator-col.tabulator-sortable[aria-sort="ascending"] .tabulator-col-title::after { content: " ▲"; font-size: 9px; color: var(--blue); }
+.tabulator .tabulator-header .tabulator-col.tabulator-sortable[aria-sort="descending"] .tabulator-col-title::after { content: " ▼"; font-size: 9px; color: var(--blue); }
 .tabulator .tabulator-tableholder .tabulator-table .tabulator-row {
   background: transparent !important;
   border-bottom: 1px solid var(--border) !important;
+  transition: background 0.1s;
 }
 .tabulator .tabulator-row:hover {
+  background: var(--bg-hover) !important;
+}
+.tabulator .tabulator-row:nth-child(even) {
+  background: rgba(22,27,34,0.4) !important;
+}
+.tabulator .tabulator-row:nth-child(even):hover {
   background: var(--bg-hover) !important;
 }
 .tabulator .tabulator-row .tabulator-cell {
   font-family: var(--font-mono);
   border-right: none !important;
+  padding: 7px 10px !important;
+  font-size: 12.5px;
+}
+/* Frozen columns get a subtle right border */
+.tabulator .tabulator-row .tabulator-cell.tabulator-frozen {
+  border-right: 2px solid var(--border-light) !important;
+  font-weight: 600;
+}
+/* Placeholder (no-data) styling */
+.tabulator .tabulator-placeholder {
+  color: var(--text-muted) !important;
+  font-size: 13px;
+  padding: 30px 16px;
+}
+/* Editable cell hint */
+.tabulator .tabulator-row .tabulator-cell[tabulator-field]:focus {
+  outline: 1px solid var(--blue);
+  outline-offset: -1px;
+}
+
+/* ── Inline cell formatters (used by PaisaTables) ─────────────── */
+.cell-money { color: var(--text-primary); }
+.cell-positive { color: var(--green); }
+.cell-negative { color: var(--red); }
+.cell-neutral  { color: var(--yellow); }
+.cell-muted    { color: var(--text-muted); }
+.cell-bold     { font-weight: 600; }
+
+/* Score bar — small inline bar behind the number */
+.cell-score-wrap {
+  position: relative; display: inline-flex; align-items: center;
+  width: 100%; min-width: 50px;
+}
+.cell-score-bg {
+  position: absolute; left: 0; top: 2px; bottom: 2px;
+  border-radius: 2px; opacity: 0.15; pointer-events: none;
+}
+.cell-score-val {
+  position: relative; z-index: 1; font-weight: 600;
+}
+
+/* Side badge */
+.cell-side {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+}
+.cell-side-buy  { background: rgba(63,185,80,0.15); color: var(--green); }
+.cell-side-sell { background: rgba(248,81,73,0.15); color: var(--red); }
+
+/* Status badge */
+.cell-status {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.3px;
+}
+.cell-status-filled, .cell-status-ok, .cell-status-open { background: rgba(63,185,80,0.12); color: var(--green); }
+.cell-status-partial, .cell-status-pending, .cell-status-new { background: rgba(210,153,34,0.12); color: var(--yellow); }
+.cell-status-rejected, .cell-status-cancelled, .cell-status-error, .cell-status-failed { background: rgba(248,81,73,0.12); color: var(--red); }
+
+/* Regime badge */
+.cell-regime {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  font-size: 10px; font-weight: 600;
+}
+.cell-regime-trending      { background: rgba(63,185,80,0.12); color: var(--green); }
+.cell-regime-rotation      { background: rgba(210,153,34,0.12); color: var(--yellow); }
+.cell-regime-risk_off      { background: rgba(248,81,73,0.12); color: var(--red); }
+.cell-regime-consolidation { background: rgba(88,166,255,0.12); color: var(--blue); }
+
+/* Signal type badge */
+.cell-signal-long    { color: var(--green); font-weight: 600; }
+.cell-signal-avoid   { color: var(--red); font-weight: 600; }
+.cell-signal-neutral { color: var(--text-muted); }
+
+/* Factor cell — mini heatmap coloring */
+.cell-factor {
+  display: inline-block; width: 100%; text-align: right;
+  padding: 2px 4px; border-radius: 2px; font-weight: 500;
 }
 
 /* ── VIX Widget ───────────────────────────────────────────────── */

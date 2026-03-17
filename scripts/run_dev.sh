@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────────
 # Paisabot — Development launcher
-# Starts PostgreSQL + Redis only (via docker-compose.infra.yml),
-# runs DB migrations, seeds config, then launches Flask + Celery
-# directly on the host — no app container build required.
+# Starts PostgreSQL + Redis only (via docker compose — infra services
+# have no profile, so they start by default), runs DB migrations,
+# seeds config, then launches Flask + Celery on the host.
 #
 # Usage:  ./scripts/run_dev.sh [--skip-docker] [--skip-migrate] [--skip-seed]
 # ──────────────────────────────────────────────────────────────────
@@ -59,6 +59,10 @@ if [ -d "venv" ]; then
     info "Virtual environment activated"
 fi
 
+# ── Install dev dependencies (CPU torch + transformers) ────
+info "Installing dev dependencies..."
+pip install -q -r requirements-dev.txt
+
 # ── Docker: PostgreSQL + Redis ───────────────────────────────────
 if [ "$SKIP_DOCKER" = false ]; then
     if ! command -v docker &>/dev/null; then
@@ -66,13 +70,13 @@ if [ "$SKIP_DOCKER" = false ]; then
         exit 1
     fi
 
-    info "Starting PostgreSQL and Redis via docker-compose.infra.yml..."
-    docker compose -f docker-compose.infra.yml up -d
+    info "Starting PostgreSQL and Redis via docker compose..."
+    docker compose up -d
 
     # Wait for healthy containers
     echo -n "  Waiting for PostgreSQL..."
     for i in $(seq 1 30); do
-        if docker compose -f docker-compose.infra.yml exec -T postgres pg_isready -U paisabot &>/dev/null; then
+        if docker compose exec -T postgres pg_isready -U paisabot &>/dev/null; then
             echo " ready"
             break
         fi
@@ -87,7 +91,7 @@ if [ "$SKIP_DOCKER" = false ]; then
 
     echo -n "  Waiting for Redis..."
     for i in $(seq 1 15); do
-        if docker compose -f docker-compose.infra.yml exec -T redis redis-cli ping &>/dev/null; then
+        if docker compose exec -T redis redis-cli ping &>/dev/null; then
             echo " ready"
             break
         fi
@@ -145,7 +149,7 @@ cleanup() {
         wait "$BEAT_PID" 2>/dev/null || true
         info "Celery beat stopped"
     fi
-    info "Done. Infrastructure is still running — stop with: docker compose -f docker-compose.infra.yml down"
+    info "Done. Infrastructure is still running — stop with: docker compose down"
 }
 trap cleanup EXIT INT TERM
 
