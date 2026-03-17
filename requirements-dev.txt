@@ -1,0 +1,19 @@
+# Paisabot — Dev dependencies (CPU-only torch for local development)
+#
+# Usage:
+#   pip install -r requirements-dev.txt
+#
+# Includes all core deps + CPU-only PyTorch + transformers
+# so FinBERT sentiment works locally without an NVIDIA GPU.
+
+-r requirements.txt
+
+# CPU-only PyTorch (no CUDA required)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.10.0+cpu
+
+# ML / NLP for FinBERT sentiment
+huggingface_hub==0.36.2
+safetensors==0.7.0
+tokenizers==0.22.2
+transformers==4.57.6

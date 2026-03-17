@@ -1,3 +1,10 @@
+# Paisabot — Docker Compose
+#
+# Usage:
+#   docker compose up -d                    # infra only (postgres + redis) for local dev
+#   docker compose --profile app up -d      # full stack (postgres + redis + web + celery)
+#   docker compose --profile app down       # stop everything
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -28,6 +35,7 @@ services:
       retries: 5
 
   web:
+    profiles: [app]
     build: .
     ports:
       - "5000:5000"
@@ -47,6 +55,7 @@ services:
     restart: unless-stopped
 
   celery:
+    profiles: [app]
     build: .
     command: celery -A celery_worker worker --loglevel=info --concurrency=2
     env_file:

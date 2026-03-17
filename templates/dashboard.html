@@ -287,33 +287,27 @@ document.addEventListener('alpine:init', () => {
 document.addEventListener('DOMContentLoaded', function() {
 
   PaisaTables.create('positions-table', [
-    {title: 'Symbol',  field: 'symbol',        width: 80},
-    {title: 'Side',    field: 'direction',      width: 60},
-    {title: 'Entry',   field: 'entry_price',   formatter: 'money', formatterParams: {precision: 2}},
-    {title: 'Current', field: 'current_price', formatter: 'money', formatterParams: {precision: 2}},
-    {title: 'Weight',  field: 'weight',        formatter: PaisaTables.pctFormatter},
-    {title: 'P&L',     field: 'unrealized_pnl',formatter: PaisaTables.pnlFormatter},
+    {title: 'Symbol',  field: 'symbol',        width: 80,  formatter: PaisaTables.symbolFormatter},
+    {title: 'Side',    field: 'direction',      width: 65,  formatter: PaisaTables.sideFormatter},
+    {title: 'Entry',   field: 'entry_price',   width: 95,  hozAlign: 'right', formatter: PaisaTables.moneyFormatter},
+    {title: 'Current', field: 'current_price', width: 95,  hozAlign: 'right', formatter: PaisaTables.moneyFormatter},
+    {title: 'Weight',  field: 'weight',        width: 80,  hozAlign: 'right', formatter: PaisaTables.pctFormatter},
+    {title: 'P&L',     field: 'unrealized_pnl',width: 110, hozAlign: 'right', formatter: PaisaTables.pnlFormatter},
     {title: 'Sector',  field: 'sector'},
   ], {placeholder: 'No open positions'});
 
   PaisaTables.create('orders-table', [
-    {title: 'Symbol',    field: 'symbol',       width: 80},
-    {title: 'Side',      field: 'side',         width: 55,
-      formatter: function(cell) {
-        const v = cell.getValue(); if (!v) return '--';
-        return '<span style="color:' + (v === 'buy' ? 'var(--green)' : 'var(--red)') + ';font-weight:600">' + v.toUpperCase() + '</span>';
-      }},
+    {title: 'Symbol',    field: 'symbol',       width: 80,  formatter: PaisaTables.symbolFormatter},
+    {title: 'Side',      field: 'side',         width: 65,  formatter: PaisaTables.sideFormatter},
     {title: 'Type',      field: 'type',         width: 70},
     {title: 'Qty',       field: 'qty',          width: 70, hozAlign: 'right'},
-    {title: 'Notional',  field: 'notional',     width: 95, hozAlign: 'right',
-      formatter: function(cell) { const v = cell.getValue(); return v != null ? PaisaUtils.money(v) : '--'; }},
-    {title: 'Limit $',   field: 'limit_price',  width: 80, hozAlign: 'right',
-      formatter: function(cell) { const v = cell.getValue(); return v != null ? '$' + v.toFixed(2) : '--'; }},
-    {title: 'Status',    field: 'status',       width: 90},
+    {title: 'Notional',  field: 'notional',     width: 95, hozAlign: 'right', formatter: PaisaTables.moneyFormatter},
+    {title: 'Limit $',   field: 'limit_price',  width: 80, hozAlign: 'right', formatter: PaisaTables.moneyFormatter},
+    {title: 'Status',    field: 'status',       width: 90, formatter: PaisaTables.statusFormatter},
     {title: 'Submitted', field: 'submitted_at', formatter: PaisaTables.timeFormatter},
     {title: '',          field: 'id',           width: 75, hozAlign: 'center', headerSort: false,
       formatter: function(cell) {
-        const id = cell.getValue();
+        var id = cell.getValue();
         return '<button class="btn" onclick="cancelOrder(\'' + id + '\')" style="padding:2px 8px;font-size:11px;background:var(--red-dim);color:var(--red);border-color:var(--red-dim)">Cancel</button>';
       }},
   ], {index: 'id', maxHeight: '280px', placeholder: 'No open orders'});
@@ -368,12 +362,7 @@ document.addEventListener('DOMContentLoaded', function() {
       formatter: activeToggleFormatter, cellClick: activeToggleCellClick},
     {title: 'Price',  field: 'current_price',        width: 90,  hozAlign: 'right', formatter: priceFormatter},
     {title: 'Chg %',  field: 'prev_close',           width: 80,  hozAlign: 'right', formatter: changePctFormatter},
-    {title: 'Signal', field: 'last_signal_type',     width: 72,
-      formatter: function(cell) {
-        const v = cell.getValue() || '-';
-        const c = v === 'long' ? 'var(--green)' : v === 'avoid' ? 'var(--red)' : 'var(--text-muted)';
-        return `<span style="color:${c}">${v}</span>`;
-      }},
+    {title: 'Signal', field: 'last_signal_type',     width: 72,  formatter: PaisaTables.signalFormatter},
     {title: 'Score',  field: 'last_composite_score', width: 70,  hozAlign: 'right', formatter: PaisaTables.scoreFormatter},
     {title: 'Name',   field: 'name',                 minWidth: 160},
     {title: 'Sector', field: 'sector',               minWidth: 100},

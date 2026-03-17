@@ -22,11 +22,12 @@ git mv .gitiginore .gitignore
 ```bash
 python -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt  # core + CPU torch + transformers
+# pip install -r requirements-prod.txt  # GPU/CUDA for FinBERT (Linux prod)
 cp .env.example .env              # Fill in API keys
 
 # Database
-docker-compose up -d              # starts PostgreSQL + Redis
+docker compose up -d              # starts PostgreSQL + Redis (infra only)
 alembic upgrade head
 python scripts/seed_config.py     # seeds default system_config values
 python scripts/universe_setup.py  # populates ETF universe table
