@@ -86,9 +86,9 @@ class BreadthFactor(FactorBase):
             return 0.5
 
         ema = daily_changes.ewm(span=10).mean().iloc[-1]
-        # Normalize: ema ranges roughly [-1, 1], map to [0, 1]
-        score = np.clip((ema + 0.01) / 0.02, 0.0, 1.0)
-        return float(score)
+        # Normalize: ema ranges [-1, 1] → map linearly to [0, 1]
+        score = (ema + 1.0) / 2.0
+        return float(np.clip(score, 0.0, 1.0))
 
     def _compute_sector_participation(self, closes_df: pd.DataFrame) -> float:
         """Fraction of sectors with positive 5-day returns."""
