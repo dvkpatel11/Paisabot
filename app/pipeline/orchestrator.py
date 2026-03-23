@@ -148,7 +148,7 @@ class PipelineOrchestrator:
             else:
                 constraints = PortfolioConstraints.for_etf()
 
-        pm = PortfolioManager(self._redis, self._config)
+        pm = PortfolioManager(self._redis, self._config, asset_class=asset_class)
         portfolio_result = pm.run(
             signals=pipeline_data['signals'],
             current_positions=pipeline_data['positions_weights'],
@@ -248,10 +248,12 @@ class PipelineOrchestrator:
             db_session=self._db,
         )
 
-        # Tag orders with asset_class for trade persistence
+        # Tag orders with asset_class and account_id for trade persistence
         asset_class = pipeline_data.get('asset_class', self._asset_class)
+        account_id = self._get_account_id()
         for order in approved:
             order['asset_class'] = asset_class
+            order['account_id'] = account_id
 
         exec_results = engine.execute_orders(approved)
 
@@ -405,7 +407,11 @@ class PipelineOrchestrator:
         for symbol in symbols:
             bars = (
                 PriceBar.query
-                .filter_by(symbol=symbol, timeframe='1d')
+                .filter_by(
+                    symbol=symbol,
+                    timeframe='1d',
+                    asset_class=self._asset_class,
+                )
                 .order_by(desc(PriceBar.timestamp))
                 .limit(days)
                 .all()
@@ -419,6 +425,17 @@ class PipelineOrchestrator:
         if not frames:
             return pd.DataFrame()
         return pd.DataFrame(frames).dropna(how='all')
+
+    def _get_account_id(self) -> int | None:
+        """Resolve the active account ID for this asset class."""
+        try:
+            from app.models.account import Account
+            acct = Account.query.filter_by(
+                asset_class=self._asset_class, is_active=True,
+            ).first()
+            return acct.id if acct else None
+        except Exception:
+            return None
 
     def _get_portfolio_value(self, positions: list[dict]) -> float:
         """Compute portfolio NAV from account or DB."""

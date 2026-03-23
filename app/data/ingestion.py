@@ -89,6 +89,7 @@ def detect_gaps(
     start_date: date,
     end_date: date,
     trading_calendar: list[date] | None = None,
+    asset_class: str = 'etf',
 ) -> list[date]:
     """Detect missing trading days for a symbol in the given range.
 
@@ -101,6 +102,7 @@ def detect_gaps(
             and_(
                 PriceBar.symbol == symbol,
                 PriceBar.timeframe == '1d',
+                PriceBar.asset_class == asset_class,
                 PriceBar.timestamp >= datetime.combine(
                     start_date, datetime.min.time()
                 ).replace(tzinfo=timezone.utc),
@@ -164,6 +166,7 @@ def fill_gaps_with_synthetic(
                 and_(
                     PriceBar.symbol == symbol,
                     PriceBar.timeframe == '1d',
+                    PriceBar.asset_class == asset_class,
                     PriceBar.timestamp < datetime.combine(
                         gap_date, datetime.min.time()
                     ).replace(tzinfo=timezone.utc),

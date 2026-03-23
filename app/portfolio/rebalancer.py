@@ -18,10 +18,11 @@ class RebalanceEngine:
 
     MIN_TRADE_THRESHOLD = 0.005  # 50 bps; skip micro-trades
 
-    def __init__(self, redis_client=None, config_loader=None):
+    def __init__(self, redis_client=None, config_loader=None, asset_class: str = 'etf'):
         self._redis = redis_client
         self._config = config_loader
-        self._log = logger.bind(component='rebalancer')
+        self._asset_class = asset_class
+        self._log = logger.bind(component='rebalancer', asset_class=asset_class)
 
     def generate_orders(
         self,
@@ -87,6 +88,7 @@ class RebalanceEngine:
                 'current_weight': round(current, 6),
                 'delta_weight': round(delta, 6),
                 'ref_price': self._get_ref_price(sym),
+                'asset_class': self._asset_class,
             })
 
         # Sells first to free up cash

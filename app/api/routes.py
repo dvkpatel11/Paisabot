@@ -247,7 +247,7 @@ def get_scores():
     if preview:
         try:
             weights = json.loads(preview)
-            scores = _apply_preview_weights(scores, weights)
+            scores = _apply_preview_weights(scores, weights, asset_class)
         except (json.JSONDecodeError, ValueError):
             return jsonify({'error': 'invalid preview_weights'}), 400
 
@@ -292,10 +292,10 @@ def _load_scores_from_db(asset_class: str = 'etf'):
     return result
 
 
-def _apply_preview_weights(scores: dict, weights: dict) -> dict:
+def _apply_preview_weights(scores: dict, weights: dict, asset_class: str = 'etf') -> dict:
     """Re-compute composite scores with alternative weights (no DB write)."""
-    from app.signals.composite_scorer import CompositeScorer
-    default_weights = CompositeScorer.DEFAULT_WEIGHTS
+    from app.signals.composite_scorer import DEFAULT_WEIGHTS_BY_CLASS
+    default_weights = DEFAULT_WEIGHTS_BY_CLASS.get(asset_class, DEFAULT_WEIGHTS_BY_CLASS['etf'])
 
     # Merge preview into defaults
     merged = {**default_weights, **weights}

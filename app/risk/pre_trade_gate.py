@@ -175,8 +175,8 @@ class PreTradeGate:
         if self._liquidity.is_shocked(symbol):
             return 'liquidity_shock_active'
 
-        # Earnings blackout check (stocks only)
-        if self._is_in_earnings_blackout(symbol):
+        # Earnings blackout check (stocks only — ETFs don't have earnings)
+        if self._asset_class == 'stock' and self._is_in_earnings_blackout(symbol):
             return 'earnings_blackout_zone'
 
         # Position concentration check — enforce limit exactly, no hidden tolerance.
