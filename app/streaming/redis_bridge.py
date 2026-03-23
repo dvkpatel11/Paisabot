@@ -11,6 +11,7 @@ logger = structlog.get_logger()
 CHANNEL_EVENT_MAP = {
     'channel:bars': 'price_update',       # real-time price ticks → universe table
     'channel:factor_scores': 'factor_scores',
+    'channel:factor_scores:stock': 'factor_scores',  # stock factor scores
     'channel:signals': 'signals',
     'channel:portfolio': 'portfolio',
     'channel:risk_alerts': 'risk_alert',
@@ -19,6 +20,7 @@ CHANNEL_EVENT_MAP = {
     'channel:regime_change': 'regime_change',
     'channel:system_health': 'system_health',
     'channel:config_change': 'config_change',
+    'channel:kill_switch': 'kill_switch',  # kill switch state changes
 }
 
 

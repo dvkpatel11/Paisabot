@@ -1,3 +1,4 @@
+from app.models.account import Account  # noqa: F401
 from app.models.etf_universe import ETFUniverse  # noqa: F401
 from app.models.factor_scores import FactorScore  # noqa: F401
 from app.models.options_chain import OptionsChain  # noqa: F401
@@ -7,5 +8,6 @@ from app.models.price_bars import PriceBar  # noqa: F401
 from app.models.quote import Quote  # noqa: F401
 from app.models.sentiment_raw import SentimentRaw  # noqa: F401
 from app.models.signals import Signal  # noqa: F401
+from app.models.stock_universe import StockUniverse  # noqa: F401
 from app.models.system_config import SystemConfig  # noqa: F401
 from app.models.trades import Trade  # noqa: F401

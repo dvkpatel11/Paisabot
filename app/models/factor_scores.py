@@ -17,8 +17,17 @@ class FactorScore(db.Model):
     slippage_score = db.Column(db.Numeric(6, 4))
     composite_score = db.Column(db.Numeric(6, 4))   # weighted sum of component scores [0,1]
 
+    # ── stock-specific factors (NULL for ETFs) ───────────────────
+    fundamentals_score = db.Column(db.Numeric(6, 4))
+    earnings_score = db.Column(db.Numeric(6, 4))
+
+    asset_class = db.Column(
+        db.String(10), nullable=False, default='etf', server_default='etf', index=True,
+    )  # 'etf' or 'stock'
+
     __table_args__ = (
         db.Index('ix_factor_scores_sym_time', 'symbol', 'calc_time'),
+        db.Index('ix_factor_scores_asset_class', 'asset_class'),
     )
 
     def __repr__(self):

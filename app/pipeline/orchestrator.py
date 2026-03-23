@@ -5,6 +5,9 @@ serializable dict that the next stage in the chain receives as input.
 
 The monolithic ``run()`` method is kept for testing and manual invocation
 but delegates to the same stage methods used by the Celery chain.
+
+Parameterized by ``asset_class`` ('etf' or 'stock') to load the
+correct universe, signals, positions, and constraints.
 """
 from __future__ import annotations
 
@@ -28,12 +31,22 @@ class PipelineOrchestrator:
         5. record         — publish results to Redis / dashboard
     """
 
-    def __init__(self, redis_client, db_session, config_loader=None, broker=None):
+    def __init__(
+        self,
+        redis_client,
+        db_session,
+        config_loader=None,
+        broker=None,
+        asset_class: str = 'etf',
+    ):
         self._redis = redis_client
         self._db = db_session
         self._config = config_loader
         self._broker = broker
-        self._log = logger.bind(component='pipeline_orchestrator')
+        self._asset_class = asset_class
+        self._log = logger.bind(
+            component='pipeline_orchestrator', asset_class=asset_class,
+        )
 
     # ── stage 1 ──────────────────────────────────────────────────────
 
@@ -48,8 +61,9 @@ class PipelineOrchestrator:
 
         active_symbols = self._load_active_set()
         if not active_symbols:
+            label = 'etfs' if self._asset_class == 'etf' else 'stocks'
             self._log.warning('pipeline_empty_active_set')
-            return self._stopped(now, 'load_data', 'no_etfs_in_active_set')
+            return self._stopped(now, 'load_data', f'no_{label}_in_active_set')
 
         signals = self._load_signals()
         if not signals:
@@ -90,6 +104,7 @@ class PipelineOrchestrator:
         return {
             'status': 'continue',
             'stage': 'load_data',
+            'asset_class': self._asset_class,
             'timestamp': now.isoformat(),
             'signals': signals,
             'positions_weights': positions_weights,
@@ -116,8 +131,24 @@ class PipelineOrchestrator:
             for sym, vals in pipeline_data['prices_serialized'].items()
         })
 
+        asset_class = pipeline_data.get('asset_class', self._asset_class)
+
         from app.portfolio.portfolio_manager import PortfolioManager
-        pm = PortfolioManager(self._redis, self._config)
+        from app.portfolio.constraints import PortfolioConstraints
+
+        # Load asset-class-specific constraints
+        constraints = None
+        if self._config is not None:
+            constraints = PortfolioConstraints.from_config(
+                self._config, asset_class=asset_class,
+            )
+        else:
+            if asset_class == 'stock':
+                constraints = PortfolioConstraints.for_stock()
+            else:
+                constraints = PortfolioConstraints.for_etf()
+
+        pm = PortfolioManager(self._redis, self._config, asset_class=asset_class)
         portfolio_result = pm.run(
             signals=pipeline_data['signals'],
             current_positions=pipeline_data['positions_weights'],
@@ -125,6 +156,7 @@ class PipelineOrchestrator:
             prices_df=prices_df,
             regime=pipeline_data['regime'],
             sector_map=pipeline_data['sector_map'],
+            constraints=constraints,
         )
 
         orders = portfolio_result.get('orders', [])
@@ -135,6 +167,7 @@ class PipelineOrchestrator:
                 n_signals=len(pipeline_data['signals']),
                 n_candidates=len(portfolio_result.get('candidates', [])),
                 regime=pipeline_data['regime'],
+                asset_class=asset_class,
             )
 
         self._log.info('stage_portfolio_complete', n_orders=len(orders))
@@ -154,7 +187,7 @@ class PipelineOrchestrator:
         self._log.info('stage_risk_gate_start', n_orders=len(pipeline_data['orders']))
 
         from app.risk.risk_manager import RiskManager
-        rm = RiskManager(self._redis, self._config)
+        rm = RiskManager(self._redis, self._config, asset_class=self._asset_class)
         gate_result = rm.pre_trade(
             proposed_orders=pipeline_data['orders'],
             current_positions=pipeline_data['positions_list'],
@@ -179,6 +212,7 @@ class PipelineOrchestrator:
                 n_orders=len(pipeline_data['orders']),
                 n_blocked=len(blocked),
                 regime=pipeline_data['regime'],
+                asset_class=pipeline_data.get('asset_class', self._asset_class),
             )
 
         self._log.info(
@@ -213,6 +247,14 @@ class PipelineOrchestrator:
             config_loader=self._config,
             db_session=self._db,
         )
+
+        # Tag orders with asset_class and account_id for trade persistence
+        asset_class = pipeline_data.get('asset_class', self._asset_class)
+        account_id = self._get_account_id()
+        for order in approved:
+            order['asset_class'] = asset_class
+            order['account_id'] = account_id
+
         exec_results = engine.execute_orders(approved)
 
         n_filled = sum(1 for r in exec_results if r.get('status') == 'filled')
@@ -236,9 +278,12 @@ class PipelineOrchestrator:
         """Stage 5: publish pipeline summary to Redis + dashboard."""
         self._log.info('stage_record_start')
 
+        asset_class = pipeline_data.get('asset_class', self._asset_class)
+
         summary = {
             'status': pipeline_data.get('status', 'complete'),
             'stage': pipeline_data.get('stage', 'record'),
+            'asset_class': asset_class,
             'n_signals': len(pipeline_data.get('signals', {})),
             'n_candidates': pipeline_data.get('n_candidates', 0),
             'n_orders': len(pipeline_data.get('orders', [])),
@@ -280,8 +325,17 @@ class PipelineOrchestrator:
 
     def _load_signals(self) -> dict[str, dict]:
         """Load latest signals from Redis cache or DB."""
+        # Try Redis cache first
         if self._redis:
-            raw = self._redis.get('cache:signals:latest')
+            cache_key = (
+                'cache:signals:latest'
+                if self._asset_class == 'etf'
+                else f'cache:signals:{self._asset_class}:latest'
+            )
+            raw = self._redis.get(cache_key)
+            if not raw:
+                # Fallback to generic key
+                raw = self._redis.get('cache:signals:latest')
             if raw:
                 try:
                     groups = json.loads(raw)
@@ -296,14 +350,24 @@ class PipelineOrchestrator:
                 except (json.JSONDecodeError, TypeError):
                     pass
 
+        # DB fallback
         from app.models.signals import Signal
         from sqlalchemy import func
 
-        latest_time = self._db.query(func.max(Signal.signal_time)).scalar()
+        query = Signal.query.filter_by(asset_class=self._asset_class)
+        latest_time = self._db.query(
+            func.max(Signal.signal_time),
+        ).filter(
+            Signal.asset_class == self._asset_class,
+        ).scalar()
+
         if not latest_time:
             return {}
 
-        rows = Signal.query.filter_by(signal_time=latest_time).all()
+        rows = Signal.query.filter_by(
+            signal_time=latest_time,
+            asset_class=self._asset_class,
+        ).all()
         return {
             row.symbol: {
                 'symbol': row.symbol,
@@ -318,7 +382,10 @@ class PipelineOrchestrator:
     def _load_positions(self) -> tuple[dict[str, float], list[dict]]:
         from app.models.positions import Position
 
-        positions = Position.query.filter_by(status='open').all()
+        positions = Position.query.filter_by(
+            status='open',
+            asset_class=self._asset_class,
+        ).all()
         weights = {p.symbol: float(p.weight or 0) for p in positions}
         pos_list = [
             {
@@ -340,7 +407,11 @@ class PipelineOrchestrator:
         for symbol in symbols:
             bars = (
                 PriceBar.query
-                .filter_by(symbol=symbol, timeframe='1d')
+                .filter_by(
+                    symbol=symbol,
+                    timeframe='1d',
+                    asset_class=self._asset_class,
+                )
                 .order_by(desc(PriceBar.timestamp))
                 .limit(days)
                 .all()
@@ -355,7 +426,32 @@ class PipelineOrchestrator:
             return pd.DataFrame()
         return pd.DataFrame(frames).dropna(how='all')
 
+    def _get_account_id(self) -> int | None:
+        """Resolve the active account ID for this asset class."""
+        try:
+            from app.models.account import Account
+            acct = Account.query.filter_by(
+                asset_class=self._asset_class, is_active=True,
+            ).first()
+            return acct.id if acct else None
+        except Exception:
+            return None
+
     def _get_portfolio_value(self, positions: list[dict]) -> float:
+        """Compute portfolio NAV from account or DB."""
+        # Try account model first
+        try:
+            from app.models.account import Account
+            account = Account.query.filter_by(
+                asset_class=self._asset_class,
+                is_active=True,
+            ).first()
+            if account:
+                return float(account.nav)
+        except Exception:
+            pass
+
+        # Fallback: compute from positions
         from app.extensions import db as _db
         from sqlalchemy import text
 
@@ -368,13 +464,22 @@ class PipelineOrchestrator:
                 except (ValueError, TypeError):
                     pass
 
+        # Filter by asset_class
         realized_row = _db.session.execute(
-            text("SELECT COALESCE(SUM(realized_pnl), 0) FROM positions WHERE status = 'closed'")
+            text(
+                "SELECT COALESCE(SUM(realized_pnl), 0) FROM positions "
+                "WHERE status = 'closed' AND asset_class = :ac"
+            ),
+            {'ac': self._asset_class},
         ).fetchone()
         realized = float(realized_row[0]) if realized_row else 0.0
 
         unrealized_row = _db.session.execute(
-            text("SELECT COALESCE(SUM(unrealized_pnl), 0) FROM positions WHERE status = 'open'")
+            text(
+                "SELECT COALESCE(SUM(unrealized_pnl), 0) FROM positions "
+                "WHERE status = 'open' AND asset_class = :ac"
+            ),
+            {'ac': self._asset_class},
         ).fetchone()
         unrealized = float(unrealized_row[0]) if unrealized_row else 0.0
 
@@ -401,6 +506,7 @@ class PipelineOrchestrator:
 
         latest = (
             PerformanceMetric.query
+            .filter_by(asset_class=self._asset_class)
             .order_by(PerformanceMetric.date.desc())
             .first()
         )
@@ -409,31 +515,43 @@ class PipelineOrchestrator:
         return 0.0
 
     def _load_active_set(self) -> set[str]:
-        from app.models.etf_universe import ETFUniverse
+        if self._asset_class == 'stock':
+            from app.models.stock_universe import StockUniverse
+            rows = StockUniverse.query.filter_by(
+                is_active=True, in_active_set=True,
+            ).all()
+            symbols = {r.symbol for r in rows}
+        else:
+            from app.models.etf_universe import ETFUniverse
+            rows = ETFUniverse.query.filter_by(
+                is_active=True, in_active_set=True,
+            ).all()
+            symbols = {r.symbol for r in rows}
 
-        etfs = ETFUniverse.query.filter_by(
-            is_active=True, in_active_set=True,
-        ).all()
-        symbols = {e.symbol for e in etfs}
         self._log.info('active_set_loaded', count=len(symbols))
         return symbols
 
     def _build_sector_map(self) -> dict[str, str]:
-        from app.models.etf_universe import ETFUniverse
-
-        etfs = ETFUniverse.query.filter_by(is_active=True).all()
-        return {e.symbol: e.sector for e in etfs if e.sector}
+        if self._asset_class == 'stock':
+            from app.models.stock_universe import StockUniverse
+            rows = StockUniverse.query.filter_by(is_active=True).all()
+            return {r.symbol: r.sector for r in rows if r.sector}
+        else:
+            from app.models.etf_universe import ETFUniverse
+            rows = ETFUniverse.query.filter_by(is_active=True).all()
+            return {r.symbol: r.sector for r in rows if r.sector}
 
     # ── helpers ───────────────────────────────────────────────────────
 
     def _publish_summary(self, summary: dict) -> None:
         if self._redis:
             try:
-                self._redis.set(
-                    'cache:pipeline:latest',
-                    json.dumps(summary),
-                    ex=3600,
+                cache_key = (
+                    'cache:pipeline:latest'
+                    if self._asset_class == 'etf'
+                    else f'cache:pipeline:{self._asset_class}:latest'
                 )
+                self._redis.set(cache_key, json.dumps(summary), ex=3600)
                 self._redis.publish('channel:portfolio', json.dumps(summary))
             except Exception as exc:
                 self._log.error('pipeline_publish_failed', error=str(exc))

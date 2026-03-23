@@ -24,6 +24,10 @@ class Position(db.Model):
     close_reason = db.Column(db.String(50))
     stop_price = db.Column(db.Numeric(12, 4))
     take_profit_price = db.Column(db.Numeric(12, 4))
+    asset_class = db.Column(
+        db.String(10), nullable=False, default='etf', server_default='etf', index=True,
+    )  # 'etf' or 'stock'
+    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=True)
 
     def __repr__(self):
         return f'<Position {self.symbol} {self.direction} {self.status}>'

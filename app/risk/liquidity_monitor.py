@@ -39,10 +39,11 @@ class LiquidityMonitor:
     shock is detected near market close; expiring at the session boundary avoids that.
     """
 
-    def __init__(self, redis_client, config_loader=None):
+    def __init__(self, redis_client, config_loader=None, asset_class: str = 'etf'):
         self._redis = redis_client
         self._config = config_loader
-        self._log = logger.bind(component='liquidity_monitor')
+        self._asset_class = asset_class
+        self._log = logger.bind(component='liquidity_monitor', asset_class=asset_class)
 
     @property
     def shock_threshold(self) -> float:
@@ -167,7 +168,7 @@ class LiquidityMonitor:
     def _get_historical_adv(self, symbol: str) -> float | None:
         if self._redis is None:
             return None
-        raw = self._redis.get(f'etf:{symbol}:adv_30d_m')
+        raw = self._redis.get(f'{self._asset_class}:{symbol}:adv_30d_m')
         if raw is None:
             return None
         try:
@@ -194,6 +195,8 @@ class LiquidityMonitor:
             'timestamp': datetime.now(timezone.utc).isoformat(),
         }
         try:
-            self._redis.lpush('channel:risk_alerts', json.dumps(payload))
+            msg = json.dumps(payload)
+            self._redis.lpush('channel:risk_alerts', msg)   # reliable queue
+            self._redis.publish('channel:risk_alerts', msg)  # real-time dashboard
         except Exception as exc:
             self._log.error('liquidity_alert_publish_failed', error=str(exc))

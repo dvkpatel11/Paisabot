@@ -50,26 +50,33 @@ class SignalGenerator:
         redis_client=None,
         db_session=None,
         config_loader=None,
+        asset_class: str = 'etf',
     ):
         self._redis = redis_client
         self._db_session = db_session
         self._config = config_loader
-        self._log = logger.bind(component='signal_generator')
+        self._asset_class = asset_class
+        self._log = logger.bind(
+            component='signal_generator', asset_class=asset_class,
+        )
 
         self.factors = FactorRegistry(
             redis_client=redis_client,
             db_session=db_session,
             config_loader=config_loader,
+            asset_class=asset_class,
         )
         self.scorer = CompositeScorer(
             redis_client=redis_client,
             config_loader=config_loader,
+            asset_class=asset_class,
         )
         self.regime = RegimeTracker(redis_client=redis_client)
         self.filter = SignalFilter(
             redis_client=redis_client,
             config_loader=config_loader,
         )
+        self._account_id_cache: int | None = None
 
     def run(self, universe: list[str]) -> dict:
         """Run the full signal generation pipeline.
@@ -135,9 +142,10 @@ class SignalGenerator:
             composite = float(ranked_df.loc[symbol, 'composite'])
             rank = int(ranked_df.loc[symbol, 'rank'])
 
-            # Get liquidity data for filter
-            adv_m = self._get_cached_float(f'etf:{symbol}:adv_30d_m')
-            spread_bps = self._get_cached_float(f'etf:{symbol}:spread_bps')
+            # Get liquidity data for filter (key prefix varies by asset class)
+            liq_prefix = 'etf' if self._asset_class == 'etf' else 'stock'
+            adv_m = self._get_cached_float(f'{liq_prefix}:{symbol}:adv_30d_m')
+            spread_bps = self._get_cached_float(f'{liq_prefix}:{symbol}:spread_bps')
 
             tradable, reason = self.filter.is_tradable(symbol, adv_m, spread_bps)
 
@@ -272,8 +280,13 @@ class SignalGenerator:
                 'timestamp': timestamp.isoformat(),
             })
 
-            # Cache with 5min TTL
-            self._redis.set('cache:latest_scores', payload, ex=300)
+            # Cache with 5min TTL — namespaced by asset class
+            cache_key = (
+                'cache:signals:latest'
+                if self._asset_class == 'etf'
+                else f'cache:signals:{self._asset_class}:latest'
+            )
+            self._redis.set(cache_key, payload, ex=300)
 
             # Pub/sub (lossy, for dashboard)
             self._redis.publish('channel:signals', payload)
@@ -307,6 +320,8 @@ class SignalGenerator:
                     regime_confidence=confidence,
                     signal_type=sig['signal_type'],
                     block_reason=sig.get('block_reason'),
+                    asset_class=self._asset_class,
+                    account_id=self._get_account_id(),
                 )
                 rows.append(row)
 
@@ -319,3 +334,19 @@ class SignalGenerator:
                 db.session.rollback()
             except Exception:
                 pass
+
+    def _get_account_id(self) -> int | None:
+        """Resolve account_id for this asset class (cached)."""
+        if self._account_id_cache is not None:
+            return self._account_id_cache
+        try:
+            from app.models.account import Account
+            acct = Account.query.filter_by(
+                asset_class=self._asset_class, is_active=True,
+            ).first()
+            if acct:
+                self._account_id_cache = acct.id
+                return acct.id
+        except Exception:
+            pass
+        return None

@@ -240,6 +240,8 @@ class StopLossEngine:
                 'timestamp': datetime.now(timezone.utc).isoformat(),
             }
             try:
-                self._redis.lpush('channel:risk_alerts', json.dumps(payload))
+                msg = json.dumps(payload)
+                self._redis.lpush('channel:risk_alerts', msg)   # reliable queue
+                self._redis.publish('channel:risk_alerts', msg)  # real-time dashboard
             except Exception as exc:
                 self._log.error('stop_alert_publish_failed', error=str(exc))

@@ -10,6 +10,12 @@ from app.auth import api_login_required
 from app.extensions import db, redis_client
 
 
+def _get_asset_class() -> str:
+    """Extract asset_class from query params, default 'etf'."""
+    ac = request.args.get('asset_class', 'etf').lower()
+    return ac if ac in ('etf', 'stock') else 'etf'
+
+
 # ── health ─────────────────────────────────────────────────────────
 
 @api_bp.route('/health', methods=['GET'])
@@ -223,35 +229,40 @@ def update_position_stops(symbol):
 @api_bp.route('/scores', methods=['GET'])
 @api_login_required
 def get_scores():
-    """Get latest composite scores for all ETFs.
+    """Get latest composite scores.
 
     Query params:
+        asset_class: 'etf' (default) or 'stock'.
         preview_weights: JSON dict of {factor: weight} — re-score without saving.
     """
-    cached = redis_client.get('cache:scores:latest')
+    asset_class = _get_asset_class()
+    cache_key = f'cache:scores:{asset_class}:latest' if asset_class == 'stock' else 'cache:scores:latest'
+    cached = redis_client.get(cache_key)
     if cached:
         scores = json.loads(cached)
     else:
-        scores = _load_scores_from_db()
+        scores = _load_scores_from_db(asset_class)
 
     preview = request.args.get('preview_weights')
     if preview:
         try:
             weights = json.loads(preview)
-            scores = _apply_preview_weights(scores, weights)
+            scores = _apply_preview_weights(scores, weights, asset_class)
         except (json.JSONDecodeError, ValueError):
             return jsonify({'error': 'invalid preview_weights'}), 400
 
     return jsonify(scores)
 
 
-def _load_scores_from_db():
+def _load_scores_from_db(asset_class: str = 'etf'):
     from app.models.factor_scores import FactorScore
     from sqlalchemy import func
 
     subq = db.session.query(
         FactorScore.symbol,
         func.max(FactorScore.calc_time).label('latest'),
+    ).filter(
+        FactorScore.asset_class == asset_class,
     ).group_by(FactorScore.symbol).subquery()
 
     rows = db.session.query(FactorScore).join(
@@ -262,24 +273,29 @@ def _load_scores_from_db():
 
     result = {}
     for r in rows:
-        result[r.symbol] = {
+        entry = {
             'trend': _to_float(r.trend_score),
             'volatility': _to_float(r.volatility_score),
             'sentiment': _to_float(r.sentiment_score),
-            'dispersion': _to_float(r.dispersion_score),
-            'correlation': _to_float(r.correlation_score),
-            'breadth': _to_float(r.breadth_score),
             'liquidity': _to_float(r.liquidity_score),
-            'slippage': _to_float(r.slippage_score),
             'calc_time': r.calc_time.isoformat() if r.calc_time else None,
         }
+        if asset_class == 'stock':
+            entry['fundamentals'] = _to_float(r.fundamentals_score)
+            entry['earnings'] = _to_float(r.earnings_score)
+        else:
+            entry['dispersion'] = _to_float(r.dispersion_score)
+            entry['correlation'] = _to_float(r.correlation_score)
+            entry['breadth'] = _to_float(r.breadth_score)
+            entry['slippage'] = _to_float(r.slippage_score)
+        result[r.symbol] = entry
     return result
 
 
-def _apply_preview_weights(scores: dict, weights: dict) -> dict:
+def _apply_preview_weights(scores: dict, weights: dict, asset_class: str = 'etf') -> dict:
     """Re-compute composite scores with alternative weights (no DB write)."""
-    from app.signals.composite_scorer import CompositeScorer
-    default_weights = CompositeScorer.DEFAULT_WEIGHTS
+    from app.signals.composite_scorer import DEFAULT_WEIGHTS_BY_CLASS
+    default_weights = DEFAULT_WEIGHTS_BY_CLASS.get(asset_class, DEFAULT_WEIGHTS_BY_CLASS['etf'])
 
     # Merge preview into defaults
     merged = {**default_weights, **weights}
@@ -306,8 +322,14 @@ def _apply_preview_weights(scores: dict, weights: dict) -> dict:
 @api_bp.route('/signals', methods=['GET'])
 @api_login_required
 def get_signals():
-    """Get latest signals grouped by type."""
-    cached = redis_client.get('cache:signals:latest')
+    """Get latest signals grouped by type.
+
+    Query params:
+        asset_class: 'etf' (default) or 'stock'.
+    """
+    asset_class = _get_asset_class()
+    cache_key = f'cache:signals:{asset_class}:latest'
+    cached = redis_client.get(cache_key)
     if cached:
         return jsonify(json.loads(cached))
 
@@ -317,6 +339,8 @@ def get_signals():
     subq = db.session.query(
         Signal.symbol,
         func.max(Signal.signal_time).label('latest'),
+    ).filter(
+        Signal.asset_class == asset_class,
     ).group_by(Signal.symbol).subquery()
 
     rows = db.session.query(Signal).join(
@@ -382,13 +406,21 @@ def get_regime():
 @api_bp.route('/portfolio', methods=['GET'])
 @api_login_required
 def get_portfolio():
-    """Get current portfolio state: positions, weights, PnL."""
-    cached = redis_client.get('cache:portfolio:latest')
+    """Get current portfolio state: positions, weights, PnL.
+
+    Query params:
+        asset_class: 'etf' (default) or 'stock'.
+    """
+    asset_class = _get_asset_class()
+    cache_key = f'cache:portfolio:{asset_class}:latest'
+    cached = redis_client.get(cache_key)
     portfolio = json.loads(cached) if cached else {}
 
     # Open positions from DB
     from app.models.positions import Position
-    positions = Position.query.filter_by(status='open').all()
+    positions = Position.query.filter_by(
+        status='open', asset_class=asset_class,
+    ).all()
 
     pos_list = [
         {
@@ -432,8 +464,11 @@ def get_risk():
     risk_data['kill_switches'] = kill_switches
 
     # Latest performance metrics
+    asset_class = _get_asset_class()
     from app.models.performance import PerformanceMetric
-    latest = PerformanceMetric.query.order_by(
+    latest = PerformanceMetric.query.filter_by(
+        asset_class=asset_class,
+    ).order_by(
         PerformanceMetric.date.desc(),
     ).first()
 
@@ -459,13 +494,17 @@ def get_trades():
     Query params:
         limit: number of trades (default 50).
         symbol: filter by symbol.
+        asset_class: 'etf' (default) or 'stock'.
     """
     from app.models.trades import Trade
 
+    asset_class = _get_asset_class()
     limit = request.args.get('limit', 50, type=int)
     limit = min(limit, 200)
 
-    query = Trade.query.order_by(Trade.trade_time.desc())
+    query = Trade.query.filter_by(
+        asset_class=asset_class,
+    ).order_by(Trade.trade_time.desc())
 
     symbol = request.args.get('symbol')
     if symbol:
@@ -618,48 +657,69 @@ def submit_manual_trade():
 @api_bp.route('/factors/<symbol>', methods=['GET'])
 @api_login_required
 def get_factors(symbol: str):
-    """Get historical factor scores for a single ETF.
+    """Get historical factor scores for a single symbol.
 
     Query params:
         days: lookback in days (default 30, max 365).
+        asset_class: 'etf' (default) or 'stock'.
     """
     from app.models.factor_scores import FactorScore
 
+    asset_class = _get_asset_class()
     days = request.args.get('days', 30, type=int)
     days = min(days, 365)
 
     rows = FactorScore.query.filter_by(
         symbol=symbol.upper(),
+        asset_class=asset_class,
     ).order_by(
         FactorScore.calc_time.desc(),
     ).limit(days).all()
 
     rows.reverse()  # chronological
 
-    factors = {
-        'dates': [],
-        'trend': [],
-        'volatility': [],
-        'sentiment': [],
-        'dispersion': [],
-        'correlation': [],
-        'breadth': [],
-        'liquidity': [],
-        'slippage': [],
-    }
+    if asset_class == 'stock':
+        factors = {
+            'dates': [],
+            'trend': [],
+            'volatility': [],
+            'sentiment': [],
+            'liquidity': [],
+            'fundamentals': [],
+            'earnings': [],
+        }
+        for r in rows:
+            factors['dates'].append(r.calc_time.isoformat() if r.calc_time else None)
+            factors['trend'].append(_to_float(r.trend_score))
+            factors['volatility'].append(_to_float(r.volatility_score))
+            factors['sentiment'].append(_to_float(r.sentiment_score))
+            factors['liquidity'].append(_to_float(r.liquidity_score))
+            factors['fundamentals'].append(_to_float(r.fundamentals_score))
+            factors['earnings'].append(_to_float(r.earnings_score))
+    else:
+        factors = {
+            'dates': [],
+            'trend': [],
+            'volatility': [],
+            'sentiment': [],
+            'dispersion': [],
+            'correlation': [],
+            'breadth': [],
+            'liquidity': [],
+            'slippage': [],
+        }
+        for r in rows:
+            factors['dates'].append(r.calc_time.isoformat() if r.calc_time else None)
+            factors['trend'].append(_to_float(r.trend_score))
+            factors['volatility'].append(_to_float(r.volatility_score))
+            factors['sentiment'].append(_to_float(r.sentiment_score))
+            factors['dispersion'].append(_to_float(r.dispersion_score))
+            factors['correlation'].append(_to_float(r.correlation_score))
+            factors['breadth'].append(_to_float(r.breadth_score))
+            factors['liquidity'].append(_to_float(r.liquidity_score))
+            factors['slippage'].append(_to_float(r.slippage_score))
 
-    for r in rows:
-        factors['dates'].append(r.calc_time.isoformat() if r.calc_time else None)
-        factors['trend'].append(_to_float(r.trend_score))
-        factors['volatility'].append(_to_float(r.volatility_score))
-        factors['sentiment'].append(_to_float(r.sentiment_score))
-        factors['dispersion'].append(_to_float(r.dispersion_score))
-        factors['correlation'].append(_to_float(r.correlation_score))
-        factors['breadth'].append(_to_float(r.breadth_score))
-        factors['liquidity'].append(_to_float(r.liquidity_score))
-        factors['slippage'].append(_to_float(r.slippage_score))
-
-    return jsonify({'symbol': symbol.upper(), 'factors': factors})
+    return jsonify({'symbol': symbol.upper(), 'asset_class': asset_class, 'factors': factors})
 
 
 # ── config ─────────────────────────────────────────────────────────
@@ -924,12 +984,14 @@ def toggle_kill_switch(switch: str):
 
     redis_client.set(f'kill_switch:{switch}', '1' if active else '0')
 
-    redis_client.publish('channel:risk_alerts', json.dumps({
+    kill_event = {
         'type': 'kill_switch',
         'switch': switch,
         'active': active,
         'timestamp': datetime.now(timezone.utc).isoformat(),
-    }))
+    }
+    redis_client.publish('channel:risk_alerts', json.dumps(kill_event))
+    redis_client.publish('channel:kill_switch', json.dumps(kill_event))
 
     return jsonify({'switch': switch, 'active': active})
 
@@ -952,9 +1014,16 @@ def force_liquidate():
     redis_client.set('kill_switch:force_liquidate', '1')
     redis_client.set('kill_switch:trading', '1')
 
-    redis_client.publish('channel:risk_alerts', json.dumps({
+    liquidate_event = {
         'type': 'force_liquidate',
         'timestamp': datetime.now(timezone.utc).isoformat(),
+    }
+    redis_client.publish('channel:risk_alerts', json.dumps(liquidate_event))
+    redis_client.publish('channel:kill_switch', json.dumps({
+        'type': 'kill_switch',
+        'switch': 'force_liquidate',
+        'active': True,
+        'timestamp': liquidate_event['timestamp'],
     }))
 
     return jsonify({'status': 'liquidation_triggered'})
@@ -1248,6 +1317,7 @@ def run_backtest():
     """Run a backtest with given parameters.
 
     Body: {
+        "asset_class": "etf",
         "weights": {"trend": 0.25, "volatility": 0.20, ...},
         "start_date": "2023-01-01",
         "end_date": "2025-12-31",
@@ -1261,6 +1331,7 @@ def run_backtest():
     from app.backtesting import VectorizedBacktester
 
     data = request.get_json(silent=True) or {}
+    asset_class = data.get('asset_class', 'etf')
 
     weights = data.get('weights')
     try:
@@ -1277,8 +1348,9 @@ def run_backtest():
         weights=weights,
         initial_capital=data.get('initial_capital', 100_000),
         rebalance_freq=data.get('rebalance_freq', 'weekly'),
-        max_positions=data.get('max_positions', 10),
+        max_positions=data.get('max_positions', 10 if asset_class == 'etf' else 15),
         slippage_bps=data.get('slippage_bps', 2.0),
+        asset_class=asset_class,
     )
 
     result = backtester.run(start, end)
@@ -1287,14 +1359,23 @@ def run_backtest():
 
 @api_bp.route('/backtest/results', methods=['GET'])
 def get_backtest_results():
-    """Get performance metrics for tearsheet display."""
+    """Get performance metrics for tearsheet display.
+
+    Query params:
+        asset_class (str): 'etf' or 'stock', default 'etf'
+    """
     from app.models.performance import PerformanceMetric
 
-    rows = PerformanceMetric.query.order_by(
+    asset_class = _get_asset_class()
+
+    rows = PerformanceMetric.query.filter_by(
+        asset_class=asset_class,
+    ).order_by(
         PerformanceMetric.date,
     ).all()
 
     return jsonify({
+        'asset_class': asset_class,
         'dates': [r.date.isoformat() for r in rows],
         'portfolio_value': [_to_float(r.portfolio_value) for r in rows],
         'daily_return': [_to_float(r.daily_return) for r in rows],
@@ -1721,15 +1802,37 @@ def start_websocket():
         return jsonify({'error': 'Alpaca API keys not configured'}), 400
 
     etfs = ETFUniverse.query.filter_by(is_active=True).all()
-    symbols = [e.symbol for e in etfs]
+    etf_symbols = [e.symbol for e in etfs]
+
+    # Also load active stocks
+    stock_symbols = []
+    try:
+        from app.models.stock_universe import StockUniverse
+        stocks = StockUniverse.query.filter_by(is_active=True).all()
+        stock_symbols = [s.symbol for s in stocks]
+    except Exception:
+        pass
+
+    all_symbols = etf_symbols + stock_symbols
 
     # Sync Redis active-set cache on startup
     _sync_active_set_cache()
 
     _ws_listener = AlpacaWebSocketListener(api_key, secret_key, redis_client)
-    _ws_listener.start(symbols)
+    # Tag symbols by asset class before starting
+    for sym in etf_symbols:
+        _ws_listener._symbol_asset_class[sym] = 'etf'
+    for sym in stock_symbols:
+        _ws_listener._symbol_asset_class[sym] = 'stock'
 
-    return jsonify({'status': 'started', 'symbols': len(symbols)})
+    _ws_listener.start(all_symbols)
+
+    return jsonify({
+        'status': 'started',
+        'etf_symbols': len(etf_symbols),
+        'stock_symbols': len(stock_symbols),
+        'total': len(all_symbols),
+    })
 
 
 @api_bp.route('/data/websocket/stop', methods=['POST'])

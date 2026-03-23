@@ -24,6 +24,15 @@ DEFAULTS = [
     ('weights', 'weight_liquidity', '0.15', 'float', 'Liquidity/slippage weight'),
     ('weights', 'weights_sum_constraint', 'enforce', 'string', 'Validate sum = 1.0 on save'),
 
+    # --- stock weights (fundamentals-heavy composite) ---
+    ('weights_stock', 'weight_trend', '0.20', 'float', 'Stock: trend factor weight'),
+    ('weights_stock', 'weight_volatility', '0.15', 'float', 'Stock: volatility regime weight'),
+    ('weights_stock', 'weight_sentiment', '0.15', 'float', 'Stock: sentiment factor weight'),
+    ('weights_stock', 'weight_liquidity', '0.10', 'float', 'Stock: liquidity factor weight'),
+    ('weights_stock', 'weight_fundamentals', '0.25', 'float', 'Stock: fundamentals factor weight'),
+    ('weights_stock', 'weight_earnings', '0.15', 'float', 'Stock: earnings factor weight'),
+    ('weights_stock', 'weights_sum_constraint', 'enforce', 'string', 'Validate sum = 1.0 on save'),
+
     # --- universe ---
     ('universe', 'min_aum_bn', '2.0', 'float', 'Minimum AUM in billions'),
     ('universe', 'min_avg_daily_vol_m', '20.0', 'float', 'Min 30-day avg daily volume ($M)'),

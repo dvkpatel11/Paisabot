@@ -17,6 +17,9 @@ class PriceBar(db.Model):
     trade_count = db.Column(db.Integer)
     is_synthetic = db.Column(db.Boolean, default=False)
     source = db.Column(db.String(20), default='alpaca')
+    asset_class = db.Column(
+        db.String(10), nullable=False, default='etf', server_default='etf', index=True,
+    )  # 'etf' or 'stock'
 
     __table_args__ = (
         db.UniqueConstraint(
@@ -24,6 +27,7 @@ class PriceBar(db.Model):
             name='uq_bar_symbol_tf_ts',
         ),
         db.Index('ix_price_bars_sym_ts', 'symbol', 'timestamp'),
+        db.Index('ix_price_bars_asset_class', 'asset_class'),
     )
 
     def __repr__(self):

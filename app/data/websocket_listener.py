@@ -34,6 +34,7 @@ class AlpacaWebSocketListener:
         self._thread: threading.Thread | None = None
         self._running = False
         self._symbols: list[str] = []
+        self._symbol_asset_class: dict[str, str] = {}  # symbol → 'etf'|'stock'
         self._log = logger.bind(component='ws_listener')
 
     def start(self, symbols: list[str]) -> None:
@@ -68,11 +69,12 @@ class AlpacaWebSocketListener:
         self._thread.start()
         self._log.info('ws_started', symbols=len(symbols))
 
-    def add_symbol(self, symbol: str) -> None:
+    def add_symbol(self, symbol: str, asset_class: str = 'etf') -> None:
         """Dynamically add a symbol to the live subscription."""
         if symbol in self._symbols:
             return
         self._symbols.append(symbol)
+        self._symbol_asset_class[symbol] = asset_class
         if self._stream:
             try:
                 def on_bar(bar):
@@ -155,6 +157,7 @@ class AlpacaWebSocketListener:
                 'close': close_price,
                 'volume': int(bar.volume),
                 'vwap': float(bar.vwap) if hasattr(bar, 'vwap') and bar.vwap else None,
+                'asset_class': self._symbol_asset_class.get(symbol, 'etf'),
             }
 
             # 1. Update latest price cache (for risk monitoring)

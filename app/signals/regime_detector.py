@@ -162,7 +162,8 @@ class RegimeTracker:
             'confidence': confidence,
             'factors': market_factors,
         })
-        self._redis.lpush('channel:regime_change', msg)
+        self._redis.lpush('channel:regime_change', msg)      # reliable queue
+        self._redis.publish('channel:regime_change', msg)   # real-time dashboard
 
     def _save_state(self) -> None:
         """Persist tracker state to Redis."""

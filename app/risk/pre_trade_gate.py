@@ -26,11 +26,15 @@ class PreTradeGate:
         redis_client,
         config_loader=None,
         liquidity_monitor: LiquidityMonitor | None = None,
+        asset_class: str = 'etf',
     ):
         self._redis = redis_client
         self._config = config_loader
-        self._liquidity = liquidity_monitor or LiquidityMonitor(redis_client, config_loader)
-        self._log = logger.bind(component='pre_trade_gate')
+        self._asset_class = asset_class
+        self._liquidity = liquidity_monitor or LiquidityMonitor(
+            redis_client, config_loader, asset_class=asset_class,
+        )
+        self._log = logger.bind(component='pre_trade_gate', asset_class=asset_class)
 
     # ── kill switch checks ──────────────────────────────────────────
 
@@ -171,6 +175,10 @@ class PreTradeGate:
         if self._liquidity.is_shocked(symbol):
             return 'liquidity_shock_active'
 
+        # Earnings blackout check (stocks only — ETFs don't have earnings)
+        if self._asset_class == 'stock' and self._is_in_earnings_blackout(symbol):
+            return 'earnings_blackout_zone'
+
         # Position concentration check — enforce limit exactly, no hidden tolerance.
         max_pos = self._get_float('portfolio', 'max_position_size', 0.05)
         order_weight = notional / portfolio_value if portfolio_value > 0 else 0
@@ -196,6 +204,28 @@ class PreTradeGate:
             return f'above_max_notional ${notional:.0f} > ${max_notional:.0f}'
 
         return None
+
+    # ── earnings blackout ──────────────────────────────────────────
+
+    def _is_in_earnings_blackout(self, symbol: str) -> bool:
+        """Check if a stock is within the earnings blackout zone (≤3 days).
+
+        Returns False for ETFs (no earnings dates) or when earnings date
+        is unknown. Only blocks trades for stocks with a known imminent
+        earnings report.
+        """
+        if self._redis is None:
+            return False
+
+        try:
+            raw = self._redis.get(f'earnings:{symbol}:days_to')
+            if raw is None:
+                return False
+            val = raw.decode() if isinstance(raw, bytes) else raw
+            days = int(val)
+            return days <= 3
+        except (ValueError, TypeError):
+            return False
 
     # ── weight computation ──────────────────────────────────────────
 
