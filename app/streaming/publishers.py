@@ -49,6 +49,17 @@ def publish_config_change(redis_client, change: dict) -> None:
     publish_event(redis_client, 'channel:config_change', change)
 
 
+def publish_kill_switch(redis_client, switch: str, active: bool) -> None:
+    """Broadcast kill switch state change for instant dashboard notification."""
+    from datetime import datetime, timezone
+    publish_event(redis_client, 'channel:kill_switch', {
+        'type': 'kill_switch',
+        'switch': switch,
+        'active': active,
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+    })
+
+
 def publish_pipeline_status(redis_client, module_id: str, status: dict) -> None:
     """Publish pipeline module status to Redis cache + pub/sub.
 

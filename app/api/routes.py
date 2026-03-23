@@ -984,12 +984,14 @@ def toggle_kill_switch(switch: str):
 
     redis_client.set(f'kill_switch:{switch}', '1' if active else '0')
 
-    redis_client.publish('channel:risk_alerts', json.dumps({
+    kill_event = {
         'type': 'kill_switch',
         'switch': switch,
         'active': active,
         'timestamp': datetime.now(timezone.utc).isoformat(),
-    }))
+    }
+    redis_client.publish('channel:risk_alerts', json.dumps(kill_event))
+    redis_client.publish('channel:kill_switch', json.dumps(kill_event))
 
     return jsonify({'switch': switch, 'active': active})
 
@@ -1012,9 +1014,16 @@ def force_liquidate():
     redis_client.set('kill_switch:force_liquidate', '1')
     redis_client.set('kill_switch:trading', '1')
 
-    redis_client.publish('channel:risk_alerts', json.dumps({
+    liquidate_event = {
         'type': 'force_liquidate',
         'timestamp': datetime.now(timezone.utc).isoformat(),
+    }
+    redis_client.publish('channel:risk_alerts', json.dumps(liquidate_event))
+    redis_client.publish('channel:kill_switch', json.dumps({
+        'type': 'kill_switch',
+        'switch': 'force_liquidate',
+        'active': True,
+        'timestamp': liquidate_event['timestamp'],
     }))
 
     return jsonify({'status': 'liquidation_triggered'})
@@ -1793,15 +1802,37 @@ def start_websocket():
         return jsonify({'error': 'Alpaca API keys not configured'}), 400
 
     etfs = ETFUniverse.query.filter_by(is_active=True).all()
-    symbols = [e.symbol for e in etfs]
+    etf_symbols = [e.symbol for e in etfs]
+
+    # Also load active stocks
+    stock_symbols = []
+    try:
+        from app.models.stock_universe import StockUniverse
+        stocks = StockUniverse.query.filter_by(is_active=True).all()
+        stock_symbols = [s.symbol for s in stocks]
+    except Exception:
+        pass
+
+    all_symbols = etf_symbols + stock_symbols
 
     # Sync Redis active-set cache on startup
     _sync_active_set_cache()
 
     _ws_listener = AlpacaWebSocketListener(api_key, secret_key, redis_client)
-    _ws_listener.start(symbols)
+    # Tag symbols by asset class before starting
+    for sym in etf_symbols:
+        _ws_listener._symbol_asset_class[sym] = 'etf'
+    for sym in stock_symbols:
+        _ws_listener._symbol_asset_class[sym] = 'stock'
 
-    return jsonify({'status': 'started', 'symbols': len(symbols)})
+    _ws_listener.start(all_symbols)
+
+    return jsonify({
+        'status': 'started',
+        'etf_symbols': len(etf_symbols),
+        'stock_symbols': len(stock_symbols),
+        'total': len(all_symbols),
+    })
 
 
 @api_bp.route('/data/websocket/stop', methods=['POST'])
