@@ -1,0 +1,673 @@
+{% extends 'admin/master.html' %}
+
+{% block head %}
+{{ super() }}
+<style>
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #21262d;
+    --border: #30363d;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --green: #3fb950;
+    --red: #f85149;
+    --yellow: #d29922;
+    --blue: #58a6ff;
+    --mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+  }
+
+  .api-test-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    font-family: var(--mono);
+  }
+
+  .api-test-header {
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .api-test-header h2 {
+    margin: 0;
+    color: var(--text-primary);
+  }
+
+  .btn-run-all {
+    background: var(--blue);
+    color: #fff;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .btn-run-all:hover { opacity: 0.85; }
+
+  .summary-bar {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 20px;
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .summary-bar .pass { color: var(--green); font-weight: 600; }
+  .summary-bar .fail { color: var(--red); font-weight: 600; }
+  .summary-bar .pending { color: var(--text-secondary); }
+
+  .api-group {
+    margin-bottom: 24px;
+  }
+
+  .api-group-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--blue);
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .api-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .api-card.pass { border-left: 3px solid var(--green); }
+  .api-card.fail { border-left: 3px solid var(--red); }
+  .api-card.running { border-left: 3px solid var(--yellow); }
+
+  .api-card-header {
+    display: flex;
+    align-items: center;
+    padding: 10px 16px;
+    cursor: pointer;
+    gap: 12px;
+    user-select: none;
+  }
+  .api-card-header:hover { background: var(--bg-tertiary); }
+
+  .method-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    min-width: 52px;
+    text-align: center;
+    color: #fff;
+  }
+  .method-badge.GET    { background: var(--green); }
+  .method-badge.POST   { background: var(--blue); }
+  .method-badge.PATCH  { background: var(--yellow); color: #000; }
+  .method-badge.DELETE { background: var(--red); }
+
+  .api-path {
+    font-size: 13px;
+    color: var(--text-primary);
+    font-weight: 500;
+    flex: 1;
+  }
+
+  .api-desc {
+    font-size: 11px;
+    color: var(--text-secondary);
+    flex: 2;
+  }
+
+  .status-indicator {
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 60px;
+    text-align: right;
+  }
+  .status-indicator.pass { color: var(--green); }
+  .status-indicator.fail { color: var(--red); }
+  .status-indicator.running { color: var(--yellow); }
+
+  .btn-test {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .btn-test:hover { background: var(--border); }
+
+  .api-card-body {
+    display: none;
+    padding: 0 16px 14px;
+    border-top: 1px solid var(--border);
+  }
+  .api-card.open .api-card-body { display: block; }
+
+  .detail-section {
+    margin-top: 10px;
+  }
+
+  .detail-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+
+  .detail-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
+  .detail-table th {
+    text-align: left;
+    padding: 4px 8px;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+    font-weight: 500;
+  }
+  .detail-table td {
+    padding: 4px 8px;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .response-box {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px;
+    margin-top: 8px;
+    max-height: 300px;
+    overflow: auto;
+    font-size: 11px;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .response-meta {
+    display: flex;
+    gap: 16px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 6px;
+  }
+  .response-meta .code-200 { color: var(--green); }
+  .response-meta .code-4xx { color: var(--yellow); }
+  .response-meta .code-5xx { color: var(--red); }
+
+  .conditions-list {
+    margin: 0;
+    padding: 0 0 0 16px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .conditions-list li { margin-bottom: 2px; }
+
+  .check { color: var(--green); }
+  .cross { color: var(--red); }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="api-test-container">
+  <div class="api-test-header">
+    <h2>API Validation Console</h2>
+    <button class="btn-run-all" onclick="runAll()">Run All Tests</button>
+  </div>
+
+  <div class="summary-bar" id="summary">
+    <span>Total: <strong id="s-total">0</strong></span>
+    <span>Passed: <strong class="pass" id="s-pass">0</strong></span>
+    <span>Failed: <strong class="fail" id="s-fail">0</strong></span>
+    <span>Pending: <strong class="pending" id="s-pending">0</strong></span>
+  </div>
+
+  <div id="api-groups"></div>
+</div>
+
+<script>
+const API_TESTS = [
+  // ── System ──
+  {
+    group: 'System',
+    method: 'GET', path: '/api/health',
+    description: 'System health with component status and kill switches',
+    input: null,
+    conditions: [
+      'Returns 200',
+      'Response has "status" field (ok or degraded)',
+      'Response has "components" with redis and database',
+      'Response has "kill_switches" object',
+      'Response has "timestamp"',
+    ],
+    validate(res, body) {
+      return res.status === 200
+        && body.status !== undefined
+        && body.components && body.components.redis !== undefined
+        && body.kill_switches !== undefined
+        && body.timestamp !== undefined;
+    }
+  },
+  {
+    group: 'System',
+    method: 'GET', path: '/api/pipelines/status',
+    description: 'Pipeline module statuses with queue depths',
+    input: null,
+    conditions: [
+      'Returns 200',
+      'Response has "modules" array with 7 entries',
+      'Each module has id, name, index, status',
+      'Response has "operational_mode"',
+    ],
+    validate(res, body) {
+      return res.status === 200
+        && Array.isArray(body.modules)
+        && body.modules.length === 7
+        && body.modules.every(m => m.id && m.name && m.status)
+        && body.operational_mode !== undefined;
+    }
+  },
+
+  // ── Scores & Factors ──
+  {
+    group: 'Scores & Factors',
+    method: 'GET', path: '/api/scores',
+    description: 'Latest composite scores for all ETFs',
+    input: null,
+    conditions: [
+      'Returns 200',
+      'Response is object (symbol -> factor scores)',
+    ],
+    validate(res, body) {
+      return res.status === 200 && typeof body === 'object';
+    }
+  },
+  {
+    group: 'Scores & Factors',
+    method: 'GET', path: '/api/factors/SPY',
+    description: 'Historical factor scores for a single ETF',
+    input: 'Path param: symbol=SPY',
+    conditions: [
+      'Returns 200',
+      'Response has "symbol" = "SPY"',
+      'Response has "factors" with arrays (dates, trend, volatility, etc.)',
+    ],
+    validate(res, body) {
+      return res.status === 200
+        && body.symbol === 'SPY'
+        && body.factors && Array.isArray(body.factors.dates);
+    }
+  },
+
+  // ── Signals & Regime ──
+  {
+    group: 'Signals & Regime',
+    method: 'GET', path: '/api/signals',
+    description: 'Latest signals grouped by type (long, neutral, avoid)',
+    input: null,
+    conditions: [
+      'Returns 200',
+      'Response has "long", "neutral", "avoid" arrays',
+    ],
+    validate(res, body) {
+      return res.status === 200
+        && Array.isArray(body.long)
+        && Array.isArray(body.neutral)
+        && Array.isArray(body.avoid);
+    }
+  },
+  {
+    group: 'Signals & Regime',
+    method: 'GET', path: '/api/regime',
+    description: 'Current market regime and confidence',
+    input: null,
+    conditions: [
+      'Returns 200',
+      'Response has "regime" field',
+      'Response has "history" array',
+    ],
+    validate(res, body) {
+      return res.status === 200
+        && body.regime !== undefined
+        && Array.isArray(body.history);
+    }
+  },
+
+  // ── Portfolio & Trades ──
+  {
+    group: 'Portfolio & Trades',
+    method: 'GET', path: '/api/portfolio',
+    description: 'Current positions, weights, PnL',
+    input: null,
+    conditions: [
+      'Returns 200',
+      'Response has "positions" array',
+    ],
+    validate(res, body) {
+      return res.status === 200 && Array.isArray(body.positions);
+    }
+  },
+  {
+    group: 'Portfolio & Trades',
+    method: 'GET', path: '/api/trades',
+    description: 'Recent trade execution log',
+    input: 'Optional query: ?limit=50&symbol=SPY',
+    conditions: [
+      'Returns 200',
+      'Response is array of trade objects',
+    ],
+    validate(res, body) {
+      return res.status === 200 && Array.isArray(body);
+    }
+  },
+  {
+    group: 'Portfolio & Trades',
+    method: 'GET', path: '/api/risk',
+    description: 'Risk state, kill switches, performance metrics',
+    input: null,
+    conditions: [
+      'Returns 200',
+      'Response has "kill_switches" object',
+    ],
+    validate(res, body) {
+      return res.status === 200 && body.kill_switches !== undefined;
+    }
+  },
+
+  // ── Universe ──
+  {
+    group: 'Universe',
+    method: 'GET', path: '/api/universe',
+    description: 'Active ETFs with metadata',
+    input: null,
+    conditions: [
+      'Returns 200',
+      'Response is array of ETF objects',
+      'Each ETF has symbol, name, sector',
+    ],
+    validate(res, body) {
+      return res.status === 200
+        && Array.isArray(body)
+        && (body.length === 0 || (body[0].symbol && body[0].name));
+    }
+  },
+
+  // ── Config ──
+  {
+    group: 'Configuration',
+    method: 'GET', path: '/api/config',
+    description: 'All config grouped by category',
+    input: null,
+    conditions: [
+      'Returns 200',
+      'Response is object with category keys (weights, risk, execution, etc.)',
+    ],
+    validate(res, body) {
+      return res.status === 200 && typeof body === 'object';
+    }
+  },
+  {
+    group: 'Configuration',
+    method: 'GET', path: '/api/config/weights',
+    description: 'Config for a single category',
+    input: 'Path param: category=weights',
+    conditions: [
+      'Returns 200',
+      'Response has weight keys (weight_trend, weight_volatility, etc.)',
+    ],
+    validate(res, body) {
+      return res.status === 200 && typeof body === 'object';
+    }
+  },
+  {
+    group: 'Configuration',
+    method: 'GET', path: '/api/config/audit',
+    description: 'Config change audit trail',
+    input: 'Optional query: ?limit=100',
+    conditions: [
+      'Returns 200',
+      'Response is array of audit entries',
+    ],
+    validate(res, body) {
+      return res.status === 200 && Array.isArray(body);
+    }
+  },
+
+  // ── Backtest ──
+  {
+    group: 'Backtest',
+    method: 'GET', path: '/api/backtest/results',
+    description: 'Performance metrics for tearsheet display',
+    input: null,
+    conditions: [
+      'Returns 200',
+      'Response has "dates", "portfolio_value", "daily_return" arrays',
+    ],
+    validate(res, body) {
+      return res.status === 200
+        && Array.isArray(body.dates)
+        && Array.isArray(body.portfolio_value);
+    }
+  },
+
+  // ── Read-only validation of write endpoints (no mutation) ──
+  {
+    group: 'Write Endpoints (Validation Only)',
+    method: 'PATCH', path: '/api/config/weights',
+    description: 'Rejects invalid weight sum (!= 1.0)',
+    input: JSON.stringify({weight_trend: '0.50', weight_volatility: '0.50'}),
+    conditions: [
+      'Returns 400 when weights do not sum to 1.0',
+      'Response has "error" message mentioning sum',
+    ],
+    validate(res, body) {
+      return res.status === 400 && body.error && body.error.includes('sum');
+    },
+    requestInit: {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({weight_trend: '0.50', weight_volatility: '0.50'}),
+    }
+  },
+  {
+    group: 'Write Endpoints (Validation Only)',
+    method: 'PATCH', path: '/api/config/mode',
+    description: 'Rejects live mode without confirmation',
+    input: JSON.stringify({mode: 'live'}),
+    conditions: [
+      'Returns 400 without confirm="I_CONFIRM_LIVE_TRADING"',
+      'Response has "error" mentioning confirmation',
+    ],
+    validate(res, body) {
+      return res.status === 400 && body.error && body.error.includes('confirm');
+    },
+    requestInit: {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({mode: 'live'}),
+    }
+  },
+  {
+    group: 'Write Endpoints (Validation Only)',
+    method: 'POST', path: '/api/control/force_liquidate',
+    description: 'Rejects liquidation without confirmation',
+    input: JSON.stringify({confirm: 'wrong'}),
+    conditions: [
+      'Returns 400 without confirm="LIQUIDATE_ALL"',
+      'Response has "error" message',
+    ],
+    validate(res, body) {
+      return res.status === 400 && body.error !== undefined;
+    },
+    requestInit: {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({confirm: 'wrong'}),
+    }
+  },
+  {
+    group: 'Write Endpoints (Validation Only)',
+    method: 'PATCH', path: '/api/control/invalid_switch',
+    description: 'Rejects invalid kill switch name',
+    input: null,
+    conditions: [
+      'Returns 400 for invalid switch name',
+      'Response has "error" message',
+    ],
+    validate(res, body) {
+      return res.status === 400 && body.error !== undefined;
+    },
+    requestInit: {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({active: true}),
+    }
+  },
+];
+
+// ── Render ──
+
+function render() {
+  const container = document.getElementById('api-groups');
+  const groups = {};
+  API_TESTS.forEach((t, i) => {
+    t._idx = i;
+    if (!groups[t.group]) groups[t.group] = [];
+    groups[t.group].push(t);
+  });
+
+  let html = '';
+  for (const [name, tests] of Object.entries(groups)) {
+    html += `<div class="api-group"><div class="api-group-title">${name}</div>`;
+    for (const t of tests) {
+      html += `
+        <div class="api-card" id="card-${t._idx}">
+          <div class="api-card-header" onclick="toggleCard(${t._idx})">
+            <span class="method-badge ${t.method}">${t.method}</span>
+            <span class="api-path">${t.path}</span>
+            <span class="api-desc">${t.description}</span>
+            <span class="status-indicator" id="status-${t._idx}">--</span>
+            <button class="btn-test" onclick="event.stopPropagation(); runOne(${t._idx})">Run</button>
+          </div>
+          <div class="api-card-body">
+            ${t.input ? `<div class="detail-section"><div class="detail-label">Input</div><div class="response-box">${escHtml(typeof t.input === 'string' ? t.input : JSON.stringify(t.input, null, 2))}</div></div>` : ''}
+            <div class="detail-section">
+              <div class="detail-label">Validation Conditions</div>
+              <ul class="conditions-list" id="conds-${t._idx}">
+                ${t.conditions.map((c, ci) => `<li id="cond-${t._idx}-${ci}">${c}</li>`).join('')}
+              </ul>
+            </div>
+            <div class="detail-section">
+              <div class="detail-label">Response</div>
+              <div class="response-meta" id="meta-${t._idx}"></div>
+              <div class="response-box" id="resp-${t._idx}">Click "Run" to test</div>
+            </div>
+          </div>
+        </div>`;
+    }
+    html += '</div>';
+  }
+  container.innerHTML = html;
+  updateSummary();
+}
+
+function toggleCard(idx) {
+  document.getElementById(`card-${idx}`).classList.toggle('open');
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Run tests ──
+
+async function runOne(idx) {
+  const t = API_TESTS[idx];
+  const card = document.getElementById(`card-${idx}`);
+  const statusEl = document.getElementById(`status-${idx}`);
+  const respEl = document.getElementById(`resp-${idx}`);
+  const metaEl = document.getElementById(`meta-${idx}`);
+
+  card.className = 'api-card open running';
+  statusEl.className = 'status-indicator running';
+  statusEl.textContent = '...';
+  respEl.textContent = 'Running...';
+
+  const start = performance.now();
+  try {
+    const init = t.requestInit || { method: 'GET' };
+    const res = await fetch(t.path, init);
+    const elapsed = Math.round(performance.now() - start);
+    let body;
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('json')) {
+      body = await res.json();
+    } else {
+      body = await res.text();
+    }
+
+    const passed = t.validate(res, body);
+
+    card.className = `api-card open ${passed ? 'pass' : 'fail'}`;
+    statusEl.className = `status-indicator ${passed ? 'pass' : 'fail'}`;
+    statusEl.textContent = passed ? 'PASS' : 'FAIL';
+
+    const codeClass = res.status < 300 ? 'code-200' : res.status < 500 ? 'code-4xx' : 'code-5xx';
+    metaEl.innerHTML = `<span class="${codeClass}">HTTP ${res.status}</span> <span>${elapsed}ms</span>`;
+    respEl.textContent = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+
+    t._passed = passed;
+  } catch (err) {
+    const elapsed = Math.round(performance.now() - start);
+    card.className = 'api-card open fail';
+    statusEl.className = 'status-indicator fail';
+    statusEl.textContent = 'ERR';
+    metaEl.innerHTML = `<span class="code-5xx">Network Error</span> <span>${elapsed}ms</span>`;
+    respEl.textContent = err.message;
+    t._passed = false;
+  }
+
+  updateSummary();
+}
+
+async function runAll() {
+  for (let i = 0; i < API_TESTS.length; i++) {
+    await runOne(i);
+  }
+}
+
+function updateSummary() {
+  let pass = 0, fail = 0, pending = 0;
+  API_TESTS.forEach(t => {
+    if (t._passed === true) pass++;
+    else if (t._passed === false) fail++;
+    else pending++;
+  });
+  document.getElementById('s-total').textContent = API_TESTS.length;
+  document.getElementById('s-pass').textContent = pass;
+  document.getElementById('s-fail').textContent = fail;
+  document.getElementById('s-pending').textContent = pending;
+}
+
+// Init
+render();
+</script>
+{% endblock %}

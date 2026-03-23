@@ -1,0 +1,44 @@
+{% extends 'admin/master.html' %}
+{% block body %}
+<h1>Paisabot Admin</h1>
+
+<div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin:20px 0;">
+  <div style="padding:16px; background:#f8f9fa; border-radius:8px;">
+    <h3>Mode</h3>
+    <p style="font-size:24px; font-weight:bold;">{{ operational_mode }}</p>
+  </div>
+  <div style="padding:16px; background:#f8f9fa; border-radius:8px;">
+    <h3>Open Positions</h3>
+    <p style="font-size:24px; font-weight:bold;">{{ open_positions }}</p>
+  </div>
+  <div style="padding:16px; background:#f8f9fa; border-radius:8px;">
+    <h3>Kill Switches</h3>
+    {% for name, active in kill_switches.items() %}
+    <span style="display:inline-block; padding:4px 8px; margin:2px; border-radius:4px; background:{{ '#dc3545' if active else '#28a745' }}; color:white; font-size:12px;">
+      {{ name }}: {{ 'ACTIVE' if active else 'OFF' }}
+    </span>
+    {% endfor %}
+  </div>
+</div>
+
+<h2>Recent Trades</h2>
+<table class="table table-striped">
+  <thead>
+    <tr><th>Symbol</th><th>Side</th><th>Status</th><th>Fill Price</th><th>Slippage</th><th>Time</th></tr>
+  </thead>
+  <tbody>
+    {% for t in recent_trades %}
+    <tr>
+      <td>{{ t.symbol }}</td>
+      <td>{{ t.side }}</td>
+      <td>{{ t.status }}</td>
+      <td>{{ t.fill_price }}</td>
+      <td>{{ t.slippage_bps }} bps</td>
+      <td>{{ t.trade_time }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<p><a href="/dashboard">Go to Dashboard &rarr;</a></p>
+{% endblock %}

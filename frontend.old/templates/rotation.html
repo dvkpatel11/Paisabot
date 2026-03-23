@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+{% block title %}Sector Rotation - Paisabot{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Sector Rotation</h1>
+</div>
+
+<div class="grid grid-2">
+  <!-- Regime Status — driven by Alpine store 'rotation' -->
+  <div class="panel" x-data>
+    <div class="panel-header"><h2>Current Regime</h2></div>
+    <div class="regime-display">
+      <span class="badge badge-lg" :class="'badge-' + $store.rotation.regimeColor" x-text="$store.rotation.regimeName">--</span>
+      <div class="panel-sub" x-text="$store.rotation.regimeConfidence">confidence --</div>
+    </div>
+  </div>
+
+  <!-- Regime History Timeline -->
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Regime History</h2>
+      <div class="range-bar" id="regime-range-bar">
+        <button class="range-btn" data-days="30">1M</button>
+        <button class="range-btn active" data-days="90">3M</button>
+        <button class="range-btn" data-days="180">6M</button>
+        <button class="range-btn" data-days="365">1Y</button>
+      </div>
+    </div>
+    <div id="regime-timeline" style="height:120px"><div class="shimmer" style="height:100%"></div></div>
+  </div>
+</div>
+
+<!-- Sector Scoreboard -->
+<div class="panel panel-full">
+  <div class="panel-header"><h2>Sector Rankings</h2></div>
+  <div id="sector-chart" style="height:350px"><div class="shimmer" style="height:100%"></div></div>
+</div>
+
+<!-- Correlation Matrix -->
+<div class="panel panel-full">
+  <div class="panel-header">
+    <h2>Sector Correlation</h2>
+    <div class="range-bar" id="corr-range-bar">
+      <button class="range-btn" data-days="14">2W</button>
+      <button class="range-btn active" data-days="30">1M</button>
+      <button class="range-btn" data-days="60">2M</button>
+      <button class="range-btn" data-days="90">3M</button>
+    </div>
+  </div>
+  <div id="correlation-chart" style="height:400px"><div class="shimmer" style="height:100%"></div></div>
+</div>
+
+<!-- Quadrant Scatter: Composite Score vs Avg Correlation -->
+<div class="panel panel-full">
+  <div class="panel-header"><h2>Rotation Quadrant</h2></div>
+  <div id="quadrant-chart" style="height:400px"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var _corrDays = 30;
+
+// ── Alpine store for regime panel ───────────────────────────────
+document.addEventListener('alpine:init', function() {
+  Alpine.store('rotation', {
+    regimeName:       '--',
+    regimeColor:      '',
+    regimeConfidence: 'confidence --',
+  });
+
+  PaisaSocket.on('regime_change', function(data) {
+    var s      = Alpine.store('rotation');
+    var regime = data.to_regime || data.regime || 'unknown';
+    s.regimeName       = regime;
+    s.regimeColor      = PaisaUtils.regimeColor(regime);
+    s.regimeConfidence = 'confidence ' + ((data.confidence || 0) * 100).toFixed(0) + '%';
+  });
+});
+
+// ── Charts ──────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+
+  // ── Regime data ─────────────────────────────────────────────
+  PaisaUtils.fetchJSON('/api/regime').then(function(data) {
+    var s      = Alpine.store('rotation');
+    var regime = data.regime || 'unknown';
+    s.regimeName  = regime;
+    s.regimeColor = PaisaUtils.regimeColor(regime);
+    s.regimeConfidence = regime === 'unknown'
+      ? 'No regime data — run Compute Factors from the Factors page'
+      : 'confidence ' + ((data.confidence || 0) * 100).toFixed(0) + '%';
+
+    renderTimeline(data.history);
+  });
+
+  function renderTimeline(history) {
+    if (!history || history.length === 0) {
+      document.getElementById('regime-timeline').innerHTML =
+        '<div class="empty-state" style="padding:20px">No history yet</div>';
+      return;
+    }
+    var colors = history.map(function(h) { return PaisaUtils.regimeHex(h.regime); });
+    PaisaCharts.bar('regime-timeline', {
+      x: history.map(function(h) { return h.time; }),
+      y: history.map(function() { return 1; }),
+      colors: colors,
+      title: '',
+    });
+  }
+
+  // Regime range bar (re-fetches with days filter)
+  document.getElementById('regime-range-bar').addEventListener('click', function(e) {
+    var btn = e.target.closest('.range-btn');
+    if (!btn) return;
+    this.querySelectorAll('.range-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    PaisaUtils.fetchJSON('/api/regime?days=' + btn.dataset.days).then(function(data) {
+      renderTimeline(data.history);
+    });
+  });
+
+  // ── Sector rankings ─────────────────────────────────────────
+  PaisaUtils.fetchJSON('/api/signals').then(function(data) {
+    var allSignals = [].concat(data.long || [], data.neutral || [], data.avoid || []);
+    allSignals.sort(function(a, b) { return b.composite_score - a.composite_score; });
+
+    if (allSignals.length === 0) {
+      document.getElementById('sector-chart').innerHTML =
+        '<div class="empty-state">No signals yet. Run <a href="/factors" style="color:var(--accent)">Compute Factors</a> first.</div>';
+      return;
+    }
+
+    PaisaCharts.horizontalBar('sector-chart', {
+      labels: allSignals.map(function(s) { return s.symbol; }),
+      values: allSignals.map(function(s) { return s.composite_score; }),
+      title: 'Composite Score Ranking',
+    });
+
+    // Use signal data for quadrant scatter
+    loadCorrelationAndQuadrant(allSignals);
+  });
+
+  // ── Correlation matrix ──────────────────────────────────────
+  function loadCorrelation() {
+    PaisaUtils.fetchJSON('/api/rotation/correlation?days=' + _corrDays).then(function(data) {
+      if (!data.symbols || data.symbols.length < 2) {
+        document.getElementById('correlation-chart').innerHTML =
+          '<div class="empty-state">Not enough price data for correlation matrix. Need at least 2 active ETFs with bar history.</div>';
+        return;
+      }
+      PaisaCharts.heatmap('correlation-chart', {
+        z: data.matrix,
+        x: data.symbols,
+        y: data.symbols,
+        title: _corrDays + '-Day Return Correlation',
+      });
+    });
+  }
+
+  function loadCorrelationAndQuadrant(signals) {
+    PaisaUtils.fetchJSON('/api/rotation/correlation?days=' + _corrDays).then(function(data) {
+      if (!data.symbols || data.symbols.length < 2) {
+        document.getElementById('correlation-chart').innerHTML =
+          '<div class="empty-state">Not enough price data for correlation matrix.</div>';
+        document.getElementById('quadrant-chart').innerHTML =
+          '<div class="empty-state">Requires correlation data.</div>';
+        return;
+      }
+
+      // Render heatmap
+      PaisaCharts.heatmap('correlation-chart', {
+        z: data.matrix,
+        x: data.symbols,
+        y: data.symbols,
+        title: _corrDays + '-Day Return Correlation',
+      });
+
+      // Build quadrant scatter: X = composite score, Y = average correlation to rest
+      var corrMap = {};
+      data.symbols.forEach(function(sym, i) {
+        var sum = 0, count = 0;
+        data.matrix[i].forEach(function(v, j) {
+          if (i !== j) { sum += v; count++; }
+        });
+        corrMap[sym] = count > 0 ? sum / count : 0;
+      });
+
+      var scatterSyms = [], scatterX = [], scatterY = [], scatterColors = [];
+      (signals || []).forEach(function(s) {
+        if (corrMap[s.symbol] !== undefined) {
+          scatterSyms.push(s.symbol);
+          scatterX.push(s.composite_score);
+          scatterY.push(corrMap[s.symbol]);
+          scatterColors.push(
+            s.composite_score >= 0.65 ? '#3fb950' :
+            s.composite_score >= 0.40 ? '#d29922' : '#f85149'
+          );
+        }
+      });
+
+      if (scatterSyms.length < 2) {
+        document.getElementById('quadrant-chart').innerHTML =
+          '<div class="empty-state">Need signal + correlation data for quadrant view.</div>';
+        return;
+      }
+
+      var trace = {
+        x: scatterX, y: scatterY, text: scatterSyms,
+        mode: 'markers+text', type: 'scatter',
+        textposition: 'top center',
+        textfont: {size: 10, color: '#8b949e'},
+        marker: {size: 10, color: scatterColors, line: {width: 1, color: '#30363d'}},
+      };
+
+      var layout = {
+        paper_bgcolor: '#161b22', plot_bgcolor: '#0d1117',
+        font: {color: '#8b949e', family: 'Inter, system-ui, sans-serif', size: 12},
+        margin: {t: 40, r: 20, b: 50, l: 60},
+        xaxis: {title: 'Composite Score', range: [0, 1], gridcolor: '#21262d', zerolinecolor: '#30363d'},
+        yaxis: {title: 'Avg Correlation', gridcolor: '#21262d', zerolinecolor: '#30363d'},
+        title: {text: 'Rotation Quadrant', font: {size: 14}},
+        shapes: [
+          {type: 'line', x0: 0.5, x1: 0.5, y0: 0, y1: 1, yref: 'paper',
+            line: {color: '#30363d', dash: 'dot', width: 1}},
+          {type: 'line', x0: 0, x1: 1, xref: 'paper', y0: 0.5, y1: 0.5,
+            line: {color: '#30363d', dash: 'dot', width: 1}},
+        ],
+        annotations: [
+          {x: 0.95, y: 0.95, xref: 'paper', yref: 'paper', text: 'HIGH CORR + STRONG', showarrow: false, font: {size: 9, color: '#6e7681'}},
+          {x: 0.05, y: 0.95, xref: 'paper', yref: 'paper', text: 'HIGH CORR + WEAK', showarrow: false, font: {size: 9, color: '#6e7681'}},
+          {x: 0.95, y: 0.05, xref: 'paper', yref: 'paper', text: 'LOW CORR + STRONG', showarrow: false, font: {size: 9, color: '#3fb950'}},
+          {x: 0.05, y: 0.05, xref: 'paper', yref: 'paper', text: 'LOW CORR + WEAK', showarrow: false, font: {size: 9, color: '#f85149'}},
+        ],
+      };
+
+      Plotly.newPlot('quadrant-chart', [trace], layout, {responsive: true, displayModeBar: false});
+    });
+  }
+
+  loadCorrelation();
+
+  // Correlation range bar
+  document.getElementById('corr-range-bar').addEventListener('click', function(e) {
+    var btn = e.target.closest('.range-btn');
+    if (!btn) return;
+    this.querySelectorAll('.range-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    _corrDays = parseInt(btn.dataset.days);
+    loadCorrelation();
+  });
+});
+</script>
+{% endblock %}
