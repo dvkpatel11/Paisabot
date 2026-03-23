@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign In — Paisabot</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" />
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}" />
+
+  <style>
+    /* ── Login page layout ───────────────────────────────────────────── */
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-base);
+      font-family: var(--font-sans);
+    }
+
+    .login-wrap {
+      width: 100%;
+      max-width: 380px;
+      padding: var(--space-4);
+    }
+
+    /* ── Brand ───────────────────────────────────────────────────────── */
+    .login-brand {
+      text-align: center;
+      margin-bottom: var(--space-8);
+    }
+
+    .login-brand-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 52px;
+      height: 52px;
+      border-radius: var(--radius-lg);
+      background: var(--accent);
+      color: #fff;
+      font-size: 26px;
+      margin-bottom: var(--space-4);
+      box-shadow: var(--glow-accent);
+    }
+
+    .login-brand-name {
+      font-size: var(--text-2xl);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+      display: block;
+    }
+
+    .login-brand-sub {
+      font-size: var(--text-sm);
+      color: var(--text-muted);
+      margin-top: var(--space-1);
+      display: block;
+      font-family: var(--font-mono);
+      letter-spacing: 0.04em;
+    }
+
+    /* ── Card ────────────────────────────────────────────────────────── */
+    .login-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--bg-border);
+      border-radius: var(--radius-xl);
+      padding: var(--space-8);
+      box-shadow: var(--shadow-modal);
+    }
+
+    .login-card-title {
+      font-size: var(--text-lg);
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: var(--space-6);
+    }
+
+    /* ── Flash messages ──────────────────────────────────────────────── */
+    .login-error {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: var(--space-3) var(--space-4);
+      background: var(--red-bg);
+      border: 1px solid var(--red-dim);
+      border-radius: var(--radius-md);
+      color: var(--red);
+      font-size: var(--text-sm);
+      margin-bottom: var(--space-5);
+    }
+
+    /* ── Form fields ─────────────────────────────────────────────────── */
+    .field {
+      margin-bottom: var(--space-5);
+    }
+
+    .field label {
+      display: block;
+      font-size: var(--text-sm);
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: var(--space-2);
+    }
+
+    .field input {
+      width: 100%;
+      padding: 10px var(--space-4);
+      background: var(--bg-overlay);
+      border: 1px solid var(--bg-border);
+      border-radius: var(--radius-md);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: var(--text-base);
+      transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+      outline: none;
+    }
+
+    .field input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .field input::placeholder {
+      color: var(--text-muted);
+    }
+
+    /* ── Submit button ───────────────────────────────────────────────── */
+    .login-btn {
+      width: 100%;
+      padding: 11px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-md);
+      font-family: var(--font-sans);
+      font-size: var(--text-base);
+      font-weight: 600;
+      cursor: pointer;
+      transition: background var(--transition-fast), box-shadow var(--transition-fast);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-2);
+    }
+
+    .login-btn:hover {
+      background: var(--accent-hover);
+      box-shadow: var(--glow-accent);
+    }
+
+    .login-btn:active {
+      opacity: 0.9;
+    }
+
+    /* ── Footer note ─────────────────────────────────────────────────── */
+    .login-footer {
+      margin-top: var(--space-6);
+      text-align: center;
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+    }
+
+    .login-footer a {
+      color: var(--text-secondary);
+      text-decoration: none;
+    }
+
+    .login-footer a:hover {
+      color: var(--text-primary);
+    }
+
+    /* ── Animated background grid ────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--bg-border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--bg-border) 1px, transparent 1px);
+      background-size: 48px 48px;
+      opacity: 0.3;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .login-wrap { position: relative; z-index: 1; }
+  </style>
+</head>
+
+<body>
+  <div class="login-wrap">
+
+    <!-- Brand -->
+    <div class="login-brand">
+      <div class="login-brand-icon">₿</div>
+      <span class="login-brand-name">Paisabot</span>
+      <span class="login-brand-sub">SYSTEMATIC ETF TRADING</span>
+    </div>
+
+    <!-- Card -->
+    <div class="login-card">
+      <div class="login-card-title">Sign in to your account</div>
+
+      <!-- Flash errors -->
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="login-error">
+              <i class="fa-solid fa-circle-exclamation"></i>
+              {{ message }}
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <form method="POST" autocomplete="on">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+        <div class="field">
+          <label for="username">Username</label>
+          <input
+            type="text"
+            id="username"
+            name="username"
+            placeholder="admin"
+            required
+            autofocus
+            autocomplete="username"
+          />
+        </div>
+
+        <div class="field">
+          <label for="password">Password</label>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            placeholder="••••••••"
+            required
+            autocomplete="current-password"
+          />
+        </div>
+
+        <button type="submit" class="login-btn">
+          <i class="fa-solid fa-right-to-bracket"></i>
+          Sign In
+        </button>
+      </form>
+    </div>
+
+    <!-- Footer -->
+    <div class="login-footer">
+      Paisabot &mdash; Research &amp; Simulation Mode &mdash;
+      <a href="https://github.com" target="_blank" rel="noopener">Docs</a>
+    </div>
+
+  </div>
+</body>
+</html>

@@ -46,6 +46,24 @@ def portfolio():
     return render_template('analytics.html')
 
 
+@views_bp.route('/analytics')
+@login_required
+def analytics():
+    return render_template('analytics.html')
+
+
+@views_bp.route('/backtest')
+@login_required
+def backtest():
+    return render_template('backtest.html')
+
+
+@views_bp.route('/market')
+@login_required
+def market():
+    return render_template('bulletin.html')
+
+
 @views_bp.route('/pipelines')
 @login_required
 def pipelines():

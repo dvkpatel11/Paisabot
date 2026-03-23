@@ -147,11 +147,14 @@
       </a>
 
       <div class="nav-section-label">ANALYSIS</div>
-      <a href="/analytics"  class="nav-item {% if request.endpoint == 'views.analytics'  %}active{% endif %}">
+      <a href="/analytics"  class="nav-item {% if request.endpoint in ('views.analytics', 'views.portfolio') %}active{% endif %}">
         <i class="fa-solid fa-chart-bar"></i><span>Analytics</span>
       </a>
       <a href="/backtest"   class="nav-item {% if request.endpoint == 'views.backtest'   %}active{% endif %}">
-        <i class="fa-solid fa-flask"></i><span>Backtest</span>
+        <i class="fa-solid fa-flask-vial"></i><span>Backtest</span>
+      </a>
+      <a href="/market"     class="nav-item {% if request.endpoint in ('views.market', 'views.bulletin') %}active{% endif %}">
+        <i class="fa-solid fa-newspaper"></i><span>Market</span>
       </a>
 
       <div class="nav-section-label">SYSTEM</div>
