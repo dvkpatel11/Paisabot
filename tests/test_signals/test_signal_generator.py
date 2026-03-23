@@ -106,7 +106,7 @@ class TestSignalGenerator:
         for sym, sig in signals.items():
             assert 'composite_score' in sig
             assert 'signal_type' in sig
-            assert sig['signal_type'] in ('long', 'neutral', 'avoid', 'blocked')
+            assert sig['signal_type'] in ('long', 'short', 'neutral', 'avoid', 'blocked')
             assert 'regime' in sig
             assert 'rank' in sig
 
@@ -163,7 +163,7 @@ class TestSignalGenerator:
         gen.factors = mock_reg
         gen.run(['SPY', 'QQQ', 'XLE'])
 
-        assert redis.get('cache:latest_scores') is not None
+        assert redis.get('cache:signals:latest') is not None
 
     @patch('app.signals.signal_generator.FactorRegistry')
     def test_empty_universe(self, MockRegistry, redis, app, db_session):
