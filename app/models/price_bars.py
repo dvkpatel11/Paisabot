@@ -18,7 +18,7 @@ class PriceBar(db.Model):
     is_synthetic = db.Column(db.Boolean, default=False)
     source = db.Column(db.String(20), default='alpaca')
     asset_class = db.Column(
-        db.String(10), nullable=False, default='etf', server_default='etf', index=True,
+        db.String(10), nullable=False, default='etf', server_default='etf',
     )  # 'etf' or 'stock'
 
     __table_args__ = (

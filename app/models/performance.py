@@ -17,7 +17,7 @@ class PerformanceMetric(db.Model):
     num_positions = db.Column(db.Integer)
     cash_pct = db.Column(db.Numeric(6, 4))
     asset_class = db.Column(
-        db.String(10), nullable=False, default='etf', server_default='etf', index=True,
+        db.String(10), nullable=False, default='etf', server_default='etf',
     )  # 'etf' or 'stock'
     account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=True)
 

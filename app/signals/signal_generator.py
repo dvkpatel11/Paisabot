@@ -75,6 +75,7 @@ class SignalGenerator:
         self.filter = SignalFilter(
             redis_client=redis_client,
             config_loader=config_loader,
+            asset_class=asset_class,
         )
         self._account_id_cache: int | None = None
 

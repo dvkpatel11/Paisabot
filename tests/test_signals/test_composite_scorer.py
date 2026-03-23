@@ -1,7 +1,7 @@
 import fakeredis
 import pytest
 
-from app.signals.composite_scorer import CompositeScorer, DEFAULT_WEIGHTS
+from app.signals.composite_scorer import CompositeScorer, ETF_DEFAULT_WEIGHTS as DEFAULT_WEIGHTS
 
 
 class TestCompositeScorer:
