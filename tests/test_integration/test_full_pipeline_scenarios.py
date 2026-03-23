@@ -1383,7 +1383,7 @@ class TestStep12_FullPipeline_Stock_Bullish:
 
         # -- Stage 12: Account state ----------------------------
         total_deployed = sum(
-            r.get('filled_notional', 0)
+            r.get('notional', 0)
             for r in exec_results
             if r['status'] == 'filled'
         )

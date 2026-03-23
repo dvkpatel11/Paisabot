@@ -21,13 +21,24 @@ from app.signals.signal_filter import SignalFilter
 logger = structlog.get_logger()
 
 
-def classify_signal(composite_score: float, regime: str = 'consolidation') -> str:
+def classify_signal(
+    composite_score: float,
+    regime: str = 'consolidation',
+    allow_short: bool = False,
+    trend_score: float | None = None,
+) -> str:
     """Classify a composite score into a signal type.
 
     Thresholds:
-        ≥0.65 → long (≥0.70 in risk_off)
+        ≥0.65 → long  (≥0.70 in risk_off)
         0.40–0.64 → neutral
-        <0.40 → avoid
+        <0.40 → avoid  (or 'short' when all conditions met)
+
+    Short conditions (all must be true):
+        1. regime == 'risk_off'
+        2. allow_short == True  (config:execution.allow_short)
+        3. composite_score < 0.40
+        4. trend_score < 0.30  (strong downtrend confirmation)
     """
     long_threshold = 0.70 if regime == 'risk_off' else 0.65
 
@@ -36,6 +47,14 @@ def classify_signal(composite_score: float, regime: str = 'consolidation') -> st
     elif composite_score >= 0.40:
         return 'neutral'
     else:
+        # Short candidate — only in risk_off with explicit config opt-in
+        if (
+            allow_short
+            and regime == 'risk_off'
+            and trend_score is not None
+            and trend_score < 0.30
+        ):
+            return 'short'
         return 'avoid'
 
 
