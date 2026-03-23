@@ -3,221 +3,16 @@
 
 {% block extra_css %}
 <style>
-/* ── Page header ─────────────────────────────────────────────────────── */
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-5) var(--space-6);
-  border-bottom: 1px solid var(--bg-border);
-}
-
-.page-header h1 {
-  font-size: var(--text-xl);
-  font-weight: 600;
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.page-header h1 i { color: var(--accent); }
-
-.page-header-meta {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-}
-
-/* ── Tabs ────────────────────────────────────────────────────────────── */
-.tab-bar {
-  display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--bg-border);
-  padding: 0 var(--space-6);
-  background: var(--bg-surface);
-}
-
-.tab-btn {
-  padding: var(--space-3) var(--space-5);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--text-secondary);
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: none;
-  cursor: pointer;
-  transition: color var(--transition-fast), border-color var(--transition-fast);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: -1px;
-}
-
-.tab-btn:hover { color: var(--text-primary); }
-.tab-btn.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-
-/* ── Tab content ─────────────────────────────────────────────────────── */
-.tab-content { display: none; padding: var(--space-6); }
-.tab-content.active { display: block; }
-
-/* ── Two-column param layout ─────────────────────────────────────────── */
+/* ── Two-column parameter layout (responsive) ────────────────────────── */
 .param-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-4);
   margin-bottom: var(--space-4);
 }
-
 @media (max-width: 900px) { .param-grid { grid-template-columns: 1fr; } }
 
-/* ── Panel card ──────────────────────────────────────────────────────── */
-.panel {
-  background: var(--bg-surface);
-  border: 1px solid var(--bg-border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--bg-border);
-  background: var(--bg-elevated);
-}
-
-.panel-header h2 {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.panel-body { padding: var(--space-4); }
-
-/* ── Form controls ───────────────────────────────────────────────────── */
-.form-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
-}
-
-.form-row:last-child { margin-bottom: 0; }
-
-.form-group { display: flex; flex-direction: column; gap: var(--space-1); }
-
-.form-group label {
-  font-size: var(--text-xs);
-  font-weight: 500;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.form-group input,
-.form-group select {
-  padding: 7px var(--space-3);
-  background: var(--bg-overlay);
-  border: 1px solid var(--bg-border);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  outline: none;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.form-group input:focus,
-.form-group select:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-glow);
-}
-
-.form-group select { cursor: pointer; }
-
-/* ── Weight sliders ──────────────────────────────────────────────────── */
-.weight-row {
-  display: grid;
-  grid-template-columns: 90px 1fr 48px;
-  align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
-}
-
-.weight-row:last-of-type { margin-bottom: 0; }
-
-.weight-row label {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
-.weight-row input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 4px;
-  background: var(--bg-border);
-  border-radius: var(--radius-pill);
-  outline: none;
-  cursor: pointer;
-}
-
-.weight-row input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--accent);
-  cursor: pointer;
-  transition: box-shadow var(--transition-fast);
-}
-
-.weight-row input[type="range"]::-webkit-slider-thumb:hover {
-  box-shadow: 0 0 0 4px var(--accent-glow);
-}
-
-.weight-val {
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-  text-align: right;
-  min-width: 36px;
-}
-
-.weight-sum-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-2) var(--space-3);
-  margin-top: var(--space-3);
-  background: var(--bg-overlay);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--bg-border);
-  font-size: var(--text-sm);
-}
-
-.weight-sum-label { color: var(--text-secondary); }
-
-.weight-sum-val {
-  font-family: var(--font-mono);
-  font-weight: 600;
-  transition: color var(--transition-fast);
-}
-
-.weight-sum-val.ok    { color: var(--green); }
-.weight-sum-val.warn  { color: var(--yellow); }
-.weight-sum-val.error { color: var(--red); }
-
-/* ── Production factors toggle ───────────────────────────────────────── */
+/* ── Production factors toggle block ─────────────────────────────────── */
 .prod-factors-row {
   margin-top: var(--space-4);
   padding: var(--space-4);
@@ -226,14 +21,12 @@
   border-radius: var(--radius-md);
   opacity: 0.6;
 }
-
 .prod-factors-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: var(--space-2);
 }
-
 .prod-factors-label {
   display: flex;
   align-items: center;
@@ -242,7 +35,6 @@
   font-weight: 500;
   color: var(--text-secondary);
 }
-
 .badge-coming-soon {
   font-size: var(--text-xs);
   font-weight: 600;
@@ -254,50 +46,6 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-
-/* Toggle switch */
-.toggle-switch {
-  position: relative;
-  display: inline-block;
-  width: 40px;
-  height: 22px;
-  flex-shrink: 0;
-}
-
-.toggle-switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-  position: absolute;
-}
-
-.toggle-slider {
-  position: absolute;
-  inset: 0;
-  background: var(--bg-border);
-  border-radius: var(--radius-pill);
-  cursor: not-allowed;
-  transition: background var(--transition-fast);
-}
-
-.toggle-slider::before {
-  content: '';
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  left: 3px;
-  top: 3px;
-  background: var(--text-muted);
-  border-radius: 50%;
-  transition: transform var(--transition-fast), background var(--transition-fast);
-}
-
-.toggle-switch input:checked + .toggle-slider { background: var(--accent); }
-.toggle-switch input:checked + .toggle-slider::before {
-  transform: translateX(18px);
-  background: #fff;
-}
-
 .prod-factors-note {
   font-size: var(--text-xs);
   color: var(--text-muted);
@@ -306,17 +54,15 @@
   gap: var(--space-2);
   line-height: 1.5;
 }
-
 .prod-factors-note i { margin-top: 2px; flex-shrink: 0; color: var(--yellow); }
 
-/* ── Run button row ──────────────────────────────────────────────────── */
+/* ── Run button row ───────────────────────────────────────────────────── */
 .run-row {
   display: flex;
   align-items: center;
   gap: var(--space-4);
   margin-top: var(--space-5);
 }
-
 .btn-run {
   display: inline-flex;
   align-items: center;
@@ -332,254 +78,45 @@
   cursor: pointer;
   transition: background var(--transition-fast), box-shadow var(--transition-fast);
 }
-
-.btn-run:hover:not(:disabled) {
-  background: var(--accent-hover);
-  box-shadow: var(--glow-accent);
-}
-
-.btn-run:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.run-status {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-}
-
-.run-status.running { color: var(--yellow); }
-.run-status.done    { color: var(--green); }
-.run-status.error   { color: var(--red); }
-
-/* ── Spinner ─────────────────────────────────────────────────────────── */
-@keyframes spin { to { transform: rotate(360deg); } }
-.spin { animation: spin 0.7s linear infinite; }
-
-/* ── Results section ─────────────────────────────────────────────────── */
-.results-section { margin-top: var(--space-6); }
-
-.results-divider {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.results-divider::before,
-.results-divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--bg-border);
-}
-
-/* ── Metric cards ────────────────────────────────────────────────────── */
-.metrics-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
-}
-
-@media (max-width: 900px) { .metrics-grid { grid-template-columns: repeat(2, 1fr); } }
-
-.metric-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--bg-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
-  text-align: center;
-}
-
-.metric-label {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-bottom: var(--space-2);
-}
-
-.metric-value {
-  font-size: var(--text-2xl);
-  font-weight: 700;
-  font-family: var(--font-mono);
-  color: var(--text-primary);
-  line-height: 1.1;
-}
-
-.metric-sub {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  margin-top: var(--space-1);
-  font-family: var(--font-mono);
-}
-
-/* ── Chart panels ────────────────────────────────────────────────────── */
-.chart-panel {
-  background: var(--bg-surface);
-  border: 1px solid var(--bg-border);
-  border-radius: var(--radius-lg);
-  margin-bottom: var(--space-4);
-  overflow: hidden;
-}
-
-.chart-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--bg-border);
-  background: var(--bg-elevated);
-}
-
-.chart-panel-title {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.chart-panel-body { padding: var(--space-4); }
-
-/* ── Extended metrics table ──────────────────────────────────────────── */
-.metrics-ext-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
-}
-
-@media (max-width: 900px) { .metrics-ext-grid { grid-template-columns: repeat(2, 1fr); } }
-
-.metric-ext {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-3);
-  background: var(--bg-surface);
-  border: 1px solid var(--bg-border);
-  border-radius: var(--radius-md);
-}
-
-.metric-ext-label {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.metric-ext-value {
-  font-size: var(--text-md);
-  font-weight: 600;
-  font-family: var(--font-mono);
-  color: var(--text-primary);
-}
-
-/* ── Trade log table ─────────────────────────────────────────────────── */
-.trade-log-panel {
-  background: var(--bg-surface);
-  border: 1px solid var(--bg-border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-}
-
-/* ── History placeholder ─────────────────────────────────────────────── */
-.placeholder-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-4);
-  padding: var(--space-12) var(--space-6);
-  text-align: center;
-  background: var(--bg-surface);
-  border: 1px dashed var(--bg-border);
-  border-radius: var(--radius-xl);
-}
-
-.placeholder-icon {
-  font-size: 48px;
-  color: var(--text-muted);
-  opacity: 0.5;
-}
-
-.placeholder-title {
-  font-size: var(--text-lg);
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-.placeholder-body {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  max-width: 480px;
-  line-height: 1.7;
-}
-
-.placeholder-body ul {
-  list-style: none;
-  padding: 0;
-  margin-top: var(--space-3);
-  text-align: left;
-  display: inline-block;
-}
-
-.placeholder-body ul li {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
-}
-
-.placeholder-body ul li i { color: var(--accent); font-size: var(--text-xs); }
+.btn-run:hover:not(:disabled) { background: var(--accent-hover); box-shadow: var(--glow-accent); }
+.btn-run:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
 {% endblock %}
 
 {% block content %}
-<!-- ── Page header ──────────────────────────────────────────────────── -->
-<div class="page-header">
-  <h1>
-    <i class="fa-solid fa-flask-vial"></i>
-    Backtest Lab
-  </h1>
-  <span class="page-header-meta">Vectorized · Price-proxy factors · SPY benchmark</span>
-</div>
+<!-- ── Single Alpine scope wraps header + tabs + content ─────────────── -->
+<div x-data="backtestPage()" x-init="init()">
 
-<!-- ── Tab bar ─────────────────────────────────────────────────────── -->
-<div class="tab-bar" x-data="{ tab: 'run' }">
-  <button class="tab-btn" :class="{ active: tab === 'run' }" @click="tab = 'run'">
-    <i class="fa-solid fa-play"></i> Run
-  </button>
-  <button class="tab-btn" :class="{ active: tab === 'history' }" @click="tab = 'history'">
-    <i class="fa-solid fa-clock-rotate-left"></i> History
-    <span style="font-size:var(--text-xs);color:var(--text-muted);margin-left:4px">(soon)</span>
-  </button>
+  <!-- Page header -->
+  <div class="page-header">
+    <h1 class="page-title">
+      <i class="fa-solid fa-flask-vial"></i>
+      Backtest Lab
+    </h1>
+    <span class="page-meta">Vectorized · Price-proxy factors · SPY benchmark</span>
+  </div>
 
-  <!-- ── RUN TAB ────────────────────────────────────────────────────── -->
-  <template x-if="tab === 'run'">
-    <div></div><!-- keeps Alpine happy — content below is outside template -->
-  </template>
-</div>
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab-btn" :class="{ active: tab === 'run' }" @click="tab = 'run'">
+      <i class="fa-solid fa-play"></i> Run
+    </button>
+    <button class="tab-btn" :class="{ active: tab === 'history' }" @click="tab = 'history'">
+      <i class="fa-solid fa-clock-rotate-left"></i> History
+      <span style="font-size:var(--text-xs);color:var(--text-muted);margin-left:4px">(soon)</span>
+    </button>
+  </div>
 
-<!-- Content driven by Alpine on the tab-bar div above doesn't nest well with
-     large blocks; use a sibling approach with x-show instead. -->
-<div x-data="backtestPage()" style="padding:0">
-
-  <!-- ──── RUN TAB CONTENT ─────────────────────────────────────────── -->
-  <div x-show="tab === 'run'" class="tab-content active" x-cloak>
+  <!-- ── RUN TAB ───────────────────────────────────────────────────── -->
+  <div x-show="tab === 'run'" class="tab-content" x-cloak>
 
     <div class="param-grid">
 
       <!-- Left: Parameters -->
       <div class="panel">
-        <div class="panel-header"><h2><i class="fa-solid fa-sliders" style="color:var(--accent);margin-right:6px"></i>Parameters</h2></div>
+        <div class="panel-header">
+          <h2 class="panel-title"><i class="fa-solid fa-sliders" style="color:var(--accent);margin-right:6px"></i>Parameters</h2>
+        </div>
         <div class="panel-body">
 
           <div class="form-row">
@@ -633,47 +170,39 @@
         </div>
       </div>
 
-      <!-- Right: Weights + production factors toggle + run button -->
+      <!-- Right: Weights + run -->
       <div class="panel">
-        <div class="panel-header"><h2><i class="fa-solid fa-weight-hanging" style="color:var(--accent);margin-right:6px"></i>Factor Weights</h2></div>
+        <div class="panel-header">
+          <h2 class="panel-title"><i class="fa-solid fa-weight-hanging" style="color:var(--accent);margin-right:6px"></i>Factor Weights</h2>
+        </div>
         <div class="panel-body">
 
           <div class="weight-row">
             <label>Trend</label>
-            <input type="range" id="w-trend" min="0" max="100" value="30"
-                   x-on:input="updateWeight($el)" />
+            <input type="range" id="w-trend" min="0" max="100" value="30" x-on:input="updateWeight($el)" />
             <span class="weight-val" id="wv-trend">30%</span>
           </div>
-
           <div class="weight-row">
             <label>Volatility</label>
-            <input type="range" id="w-volatility" min="0" max="100" value="25"
-                   x-on:input="updateWeight($el)" />
+            <input type="range" id="w-volatility" min="0" max="100" value="25" x-on:input="updateWeight($el)" />
             <span class="weight-val" id="wv-volatility">25%</span>
           </div>
-
           <div class="weight-row">
             <label>Sentiment</label>
-            <input type="range" id="w-sentiment" min="0" max="100" value="15"
-                   x-on:input="updateWeight($el)" />
+            <input type="range" id="w-sentiment" min="0" max="100" value="15" x-on:input="updateWeight($el)" />
             <span class="weight-val" id="wv-sentiment">15%</span>
           </div>
-
           <div class="weight-row">
             <label>Breadth</label>
-            <input type="range" id="w-breadth" min="0" max="100" value="15"
-                   x-on:input="updateWeight($el)" />
+            <input type="range" id="w-breadth" min="0" max="100" value="15" x-on:input="updateWeight($el)" />
             <span class="weight-val" id="wv-breadth">15%</span>
           </div>
-
           <div class="weight-row">
             <label>Liquidity</label>
-            <input type="range" id="w-liquidity" min="0" max="100" value="15"
-                   x-on:input="updateWeight($el)" />
+            <input type="range" id="w-liquidity" min="0" max="100" value="15" x-on:input="updateWeight($el)" />
             <span class="weight-val" id="wv-liquidity">15%</span>
           </div>
 
-          <!-- Weight sum indicator -->
           <div class="weight-sum-row">
             <span class="weight-sum-label">Total weight</span>
             <span class="weight-sum-val" id="weight-sum-display">100%</span>
@@ -687,7 +216,7 @@
                 Use production factor scores
                 <span class="badge-coming-soon">Coming soon</span>
               </span>
-              <label class="toggle-switch"
+              <label class="toggle"
                      title="Requires stored FactorScore history. Enabled once factor computation has run on historical data.">
                 <input type="checkbox" id="use-prod-factors" disabled />
                 <span class="toggle-slider"></span>
@@ -701,7 +230,6 @@
             </div>
           </div>
 
-          <!-- Run -->
           <div class="run-row">
             <button class="btn-run" id="btn-run" @click="runBacktest()">
               <i class="fa-solid fa-play" id="run-icon"></i>
@@ -714,13 +242,12 @@
       </div>
     </div><!-- /.param-grid -->
 
-    <!-- ── Results (hidden until run completes) ───────────────────────── -->
+    <!-- Results (hidden until run completes) -->
     <div id="bt-results" style="display:none">
 
       <div class="results-divider">Results</div>
 
-      <!-- Primary metrics row -->
-      <div class="metrics-grid">
+      <div class="grid grid-4" style="margin-bottom:var(--space-4)">
         <div class="metric-card">
           <div class="metric-label">Total Return</div>
           <div class="metric-value" id="m-return">—</div>
@@ -740,18 +267,16 @@
         </div>
       </div>
 
-      <!-- Equity curve -->
       <div class="chart-panel">
         <div class="chart-panel-header">
           <span class="chart-panel-title">Equity Curve</span>
-          <span style="font-size:var(--text-xs);color:var(--text-muted);font-family:var(--font-mono)" id="eq-range"></span>
+          <span class="page-meta" id="eq-range"></span>
         </div>
         <div class="chart-panel-body">
           <div id="equity-chart" style="height:300px"></div>
         </div>
       </div>
 
-      <!-- Drawdown -->
       <div class="chart-panel">
         <div class="chart-panel-header">
           <span class="chart-panel-title">Drawdown</span>
@@ -761,55 +286,29 @@
         </div>
       </div>
 
-      <!-- Extended metrics -->
       <div class="results-divider">Risk &amp; Attribution</div>
 
-      <div class="metrics-ext-grid">
-        <div class="metric-ext">
-          <span class="metric-ext-label">Sortino Ratio</span>
-          <span class="metric-ext-value" id="m-sortino">—</span>
-        </div>
-        <div class="metric-ext">
-          <span class="metric-ext-label">Calmar Ratio</span>
-          <span class="metric-ext-value" id="m-calmar">—</span>
-        </div>
-        <div class="metric-ext">
-          <span class="metric-ext-label">Alpha vs SPY</span>
-          <span class="metric-ext-value" id="m-alpha">—</span>
-        </div>
-        <div class="metric-ext">
-          <span class="metric-ext-label">Beta vs SPY</span>
-          <span class="metric-ext-value" id="m-beta">—</span>
-        </div>
-        <div class="metric-ext">
-          <span class="metric-ext-label">Win Rate</span>
-          <span class="metric-ext-value" id="m-winrate">—</span>
-        </div>
-        <div class="metric-ext">
-          <span class="metric-ext-label">Info Ratio</span>
-          <span class="metric-ext-value" id="m-ir">—</span>
-        </div>
-        <div class="metric-ext">
-          <span class="metric-ext-label">Num Trades</span>
-          <span class="metric-ext-value" id="m-trades">—</span>
-        </div>
-        <div class="metric-ext">
-          <span class="metric-ext-label">Rebalances</span>
-          <span class="metric-ext-value" id="m-rebal">—</span>
-        </div>
+      <div class="grid grid-4" style="margin-bottom:var(--space-4)">
+        <div class="metric-ext"><span class="metric-ext-label">Sortino Ratio</span><span class="metric-ext-value" id="m-sortino">—</span></div>
+        <div class="metric-ext"><span class="metric-ext-label">Calmar Ratio</span><span class="metric-ext-value" id="m-calmar">—</span></div>
+        <div class="metric-ext"><span class="metric-ext-label">Alpha vs SPY</span><span class="metric-ext-value" id="m-alpha">—</span></div>
+        <div class="metric-ext"><span class="metric-ext-label">Beta vs SPY</span><span class="metric-ext-value" id="m-beta">—</span></div>
+        <div class="metric-ext"><span class="metric-ext-label">Win Rate</span><span class="metric-ext-value" id="m-winrate">—</span></div>
+        <div class="metric-ext"><span class="metric-ext-label">Info Ratio</span><span class="metric-ext-value" id="m-ir">—</span></div>
+        <div class="metric-ext"><span class="metric-ext-label">Num Trades</span><span class="metric-ext-value" id="m-trades">—</span></div>
+        <div class="metric-ext"><span class="metric-ext-label">Rebalances</span><span class="metric-ext-value" id="m-rebal">—</span></div>
       </div>
 
-      <!-- Trade log -->
       <div class="results-divider">Trade Log <span style="font-size:var(--text-xs);font-weight:400">(last 200)</span></div>
 
-      <div class="trade-log-panel">
+      <div class="panel">
         <div id="trade-log-table"></div>
       </div>
 
     </div><!-- /#bt-results -->
   </div><!-- /run tab -->
 
-  <!-- ──── HISTORY TAB CONTENT ─────────────────────────────────────── -->
+  <!-- ── HISTORY TAB ──────────────────────────────────────────────── -->
   <div x-show="tab === 'history'" class="tab-content" x-cloak>
     <div class="placeholder-card">
       <div class="placeholder-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
@@ -832,13 +331,11 @@
 
 {% block extra_js %}
 <script>
-/* ── Alpine component ─────────────────────────────────────────────── */
 function backtestPage() {
   return {
     tab: 'run',
 
     updateWeight(el) {
-      /* Update the display label */
       const factor = el.id.replace('w-', '');
       const display = document.getElementById('wv-' + factor);
       if (display) display.textContent = el.value + '%';
@@ -869,9 +366,9 @@ function backtestPage() {
 
     getParams() {
       return {
-        weights:       this.getWeights(),
-        start_date:    document.getElementById('bt-start').value,
-        end_date:      document.getElementById('bt-end').value,
+        weights:         this.getWeights(),
+        start_date:      document.getElementById('bt-start').value,
+        end_date:        document.getElementById('bt-end').value,
         initial_capital: parseFloat(document.getElementById('bt-capital').value) || 100000,
         rebalance_freq:  document.getElementById('bt-rebal').value,
         max_positions:   parseInt(document.getElementById('bt-maxpos').value) || 5,
@@ -896,8 +393,6 @@ function backtestPage() {
       this.setStatus('Computing…', 'running');
 
       const params = this.getParams();
-
-      /* Validate weight sum */
       const wsum = Object.values(params.weights).reduce((a, b) => a + b, 0);
       if (Math.abs(wsum - 1.0) > 0.05) {
         this.setStatus('Weights must sum to 100%', 'error');
@@ -908,9 +403,9 @@ function backtestPage() {
 
       try {
         const resp = await fetch('/api/backtest/run', {
-          method: 'POST',
+          method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(params),
+          body:    JSON.stringify(params),
         });
         const data = await resp.json();
 
@@ -931,15 +426,15 @@ function backtestPage() {
     },
 
     renderResults(data) {
-      document.getElementById('bt-results').style.display = 'block';
-      document.getElementById('bt-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const results = document.getElementById('bt-results');
+      results.style.display = 'block';
+      results.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-      const m = data.metrics || {};
+      const m    = data.metrics || {};
       const pct  = v => v != null ? (v * 100).toFixed(1) + '%' : '—';
       const num  = (v, d=2) => v != null ? Number(v).toFixed(d) : '—';
-      const sign = v => v >= 0 ? 'var(--green)' : 'var(--red)';
+      const sign = v => (v >= 0 ? 'var(--green)' : 'var(--red)');
 
-      /* Primary metrics */
       const setMetric = (id, text, color) => {
         const el = document.getElementById(id);
         if (!el) return;
@@ -947,26 +442,20 @@ function backtestPage() {
         if (color) el.style.color = color;
       };
 
-      setMetric('m-return', pct(m.total_return), sign(m.total_return));
-      setMetric('m-cagr',   pct(m.cagr),         sign(m.cagr));
-
-      const sharpe = m.sharpe ?? null;
-      setMetric('m-sharpe', num(sharpe),
-        sharpe == null ? null : sharpe >= 1 ? 'var(--green)' : sharpe >= 0 ? 'var(--yellow)' : 'var(--red)');
-
-      setMetric('m-maxdd',   pct(m.max_drawdown), 'var(--red)');
-
-      /* Extended metrics */
+      setMetric('m-return',  pct(m.total_return),  sign(m.total_return));
+      setMetric('m-cagr',    pct(m.cagr),           sign(m.cagr));
+      setMetric('m-sharpe',  num(m.sharpe),
+        m.sharpe == null ? null : m.sharpe >= 1 ? 'var(--green)' : m.sharpe >= 0 ? 'var(--yellow)' : 'var(--red)');
+      setMetric('m-maxdd',   pct(m.max_drawdown),   'var(--red)');
       setMetric('m-sortino', num(m.sortino));
       setMetric('m-calmar',  num(m.calmar));
-      setMetric('m-alpha',   m.alpha   != null ? pct(m.alpha)   : '—', sign(m.alpha));
+      setMetric('m-alpha',   m.alpha    != null ? pct(m.alpha)    : '—', sign(m.alpha));
       setMetric('m-beta',    num(m.beta));
       setMetric('m-winrate', m.win_rate != null ? pct(m.win_rate) : '—');
       setMetric('m-ir',      num(m.information_ratio));
-      setMetric('m-trades',  m.num_trades  ?? '—');
+      setMetric('m-trades',  m.num_trades     ?? '—');
       setMetric('m-rebal',   m.num_rebalances ?? '—');
 
-      /* Date range label */
       const eq = data.equity_curve || {};
       if (eq.dates && eq.dates.length) {
         document.getElementById('eq-range').textContent =
@@ -974,88 +463,61 @@ function backtestPage() {
       }
 
       /* Equity curve */
-      const plotlyBase = {
-        paper_bgcolor: 'transparent',
-        plot_bgcolor:  'transparent',
-        margin: { t: 8, b: 36, l: 52, r: 16 },
-        font:   { family: 'JetBrains Mono', size: 11, color: '#7f9ab8' },
-        xaxis:  { gridcolor: '#1e3050', linecolor: '#1e3050', zeroline: false },
-        yaxis:  { gridcolor: '#1e3050', linecolor: '#1e3050', zeroline: false },
-      };
-
-      Plotly.newPlot('equity-chart', [{
+      Paisa.plot('equity-chart', [{
         x:    eq.dates  || [],
         y:    eq.values || [],
         name: 'Portfolio',
-        type: 'scatter',
-        mode: 'lines',
-        fill: 'tozeroy',
-        fillcolor: 'rgba(59,130,246,0.08)',
+        type: 'scatter', mode: 'lines',
+        fill: 'tozeroy', fillcolor: 'rgba(59,130,246,0.08)',
         line: { color: '#3b82f6', width: 1.5 },
-      }], { ...plotlyBase }, { responsive: true, displayModeBar: false });
+      }], { margin: { t: 8, b: 36, l: 52, r: 16 } }, { displayModeBar: false });
 
       /* Drawdown */
       const dd = data.drawdown || {};
-      Plotly.newPlot('drawdown-chart', [{
+      Paisa.plot('drawdown-chart', [{
         x:    dd.dates  || [],
         y:    (dd.values || []).map(v => v * 100),
         name: 'Drawdown',
-        type: 'scatter',
-        mode: 'lines',
-        fill: 'tozeroy',
-        fillcolor: 'rgba(239,68,68,0.12)',
+        type: 'scatter', mode: 'lines',
+        fill: 'tozeroy', fillcolor: 'rgba(239,68,68,0.12)',
         line: { color: '#ef4444', width: 1.5 },
       }], {
-        ...plotlyBase,
-        yaxis: { ...plotlyBase.yaxis, ticksuffix: '%' },
-      }, { responsive: true, displayModeBar: false });
+        margin: { t: 8, b: 36, l: 52, r: 16 },
+        yaxis:  { ticksuffix: '%' },
+      }, { displayModeBar: false });
 
       /* Trade log */
-      const cols = [
-        { title: 'Date',     field: 'date',       width: 100, headerSort: true },
-        { title: 'Symbol',   field: 'symbol',      width: 72,  headerSort: true },
-        { title: 'Side',     field: 'side',        width: 60,
-          formatter: cell => {
-            const v = cell.getValue();
-            const cls = v === 'buy' ? 'sig-long' : 'sig-short';
-            return `<span class="${cls}" style="padding:2px 6px;border-radius:4px;font-size:11px">${v.toUpperCase()}</span>`;
-          }
-        },
-        { title: 'Old Wt',  field: 'old_weight',  width: 72,  hozAlign: 'right',
-          formatter: cell => {
-            const v = cell.getValue();
-            return v != null ? (v * 100).toFixed(1) + '%' : '—';
-          }
-        },
-        { title: 'New Wt',  field: 'new_weight',  width: 72,  hozAlign: 'right',
-          formatter: cell => {
-            const v = cell.getValue();
-            return v != null ? (v * 100).toFixed(1) + '%' : '—';
-          }
-        },
-        { title: 'Score',   field: 'score',       width: 72,  hozAlign: 'right',
-          formatter: cell => {
-            const v = cell.getValue();
-            return v != null ? Number(v).toFixed(3) : '—';
-          }
-        },
-        { title: 'Reason',  field: 'reason',      minWidth: 120 },
-      ];
-
       new Tabulator('#trade-log-table', {
-        data:           data.trade_log || [],
-        columns:        cols,
-        layout:         'fitColumns',
-        height:         320,
-        placeholder:    'No trades recorded',
-        rowFormatter:   row => {
-          row.getElement().style.fontSize = '12px';
-        },
+        data:    data.trade_log || [],
+        layout:  'fitColumns',
+        height:  320,
+        placeholder: 'No trades recorded',
+        columns: [
+          { title: 'Date',   field: 'date',       width: 100, headerSort: true },
+          { title: 'Symbol', field: 'symbol',      width: 72,  headerSort: true },
+          { title: 'Side',   field: 'side',        width: 60,
+            formatter: cell => {
+              const v = cell.getValue();
+              const cls = v === 'buy' ? 'sig-long' : 'sig-short';
+              return `<span class="${cls}" style="padding:2px 6px;border-radius:4px;font-size:11px">${v.toUpperCase()}</span>`;
+            }
+          },
+          { title: 'Old Wt', field: 'old_weight', width: 72, hozAlign: 'right',
+            formatter: cell => { const v = cell.getValue(); return v != null ? (v*100).toFixed(1)+'%' : '—'; }
+          },
+          { title: 'New Wt', field: 'new_weight', width: 72, hozAlign: 'right',
+            formatter: cell => { const v = cell.getValue(); return v != null ? (v*100).toFixed(1)+'%' : '—'; }
+          },
+          { title: 'Score',  field: 'score',      width: 72, hozAlign: 'right',
+            formatter: cell => { const v = cell.getValue(); return v != null ? Number(v).toFixed(3) : '—'; }
+          },
+          { title: 'Reason', field: 'reason', minWidth: 120 },
+        ],
+        rowFormatter: row => { row.getElement().style.fontSize = '12px'; },
       });
     },
 
     init() {
-      /* Set default end date to today */
       const endEl = document.getElementById('bt-end');
       if (endEl && !endEl.value) {
         endEl.value = new Date().toISOString().slice(0, 10);

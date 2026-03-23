@@ -14,6 +14,7 @@
   display: flex; align-items: center; justify-content: space-between;
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--bg-border);
+  background: var(--bg-elevated);
 }
 .panel-title {
   font-size: var(--text-sm);
@@ -336,3 +337,257 @@
   letter-spacing: 0.1em;
   margin-bottom: var(--space-3);
 }
+
+/* ── Tab bar (page-level navigation) ─────────────────────────────────── */
+/* .tab-btn already defined above; this wrapper adds page-chrome padding  */
+.tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--bg-border);
+  padding: 0 var(--space-2);
+  background: var(--bg-surface);
+  flex-shrink: 0;
+}
+/* Tab content panels — hidden by default, shown via Alpine :class or .active */
+.tab-content          { display: none; padding: var(--space-5); }
+.tab-content.active   { display: block; }
+
+/* ── Toggle disabled state ────────────────────────────────────────────── */
+.toggle input:disabled + .toggle-slider { cursor: not-allowed; opacity: 0.45; }
+
+/* ── Form layout ──────────────────────────────────────────────────────── */
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.form-row:last-child { margin-bottom: 0; }
+
+.form-group { display: flex; flex-direction: column; gap: var(--space-1); }
+
+.form-group label {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.form-group input,
+.form-group select {
+  padding: 7px var(--space-3);
+  background: var(--bg-overlay);
+  border: 1px solid var(--bg-border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.form-group input:focus,
+.form-group select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+.form-group select { cursor: pointer; }
+
+/* ── Weight slider row (config / backtest weights panel) ─────────────── */
+.weight-row {
+  display: grid;
+  grid-template-columns: 90px 1fr 48px;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.weight-row:last-of-type { margin-bottom: 0; }
+.weight-row label { font-size: var(--text-sm); color: var(--text-secondary); font-weight: 500; }
+
+.weight-row input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 4px;
+  background: var(--bg-border);
+  border-radius: var(--radius-pill);
+  outline: none; cursor: pointer;
+}
+.weight-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  transition: box-shadow var(--transition-fast);
+}
+.weight-row input[type="range"]::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 0 4px var(--accent-glow);
+}
+
+.weight-val {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: right;
+  min-width: 36px;
+}
+
+.weight-sum-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) 0;
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--bg-border);
+}
+.weight-sum-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.weight-sum-val {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.weight-sum-val.ok    { color: var(--green); }
+.weight-sum-val.warn  { color: var(--yellow); }
+.weight-sum-val.error { color: var(--red); }
+
+/* ── Section divider with centre label ───────────────────────────────── */
+.results-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.results-divider::before,
+.results-divider::after { content: ''; flex: 1; height: 1px; background: var(--bg-border); }
+
+/* ── Metric card (large KPI tile — used in results / tearsheet) ──────── */
+.metric-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--bg-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  text-align: center;
+  transition: border-color var(--transition-fast);
+}
+.metric-card:hover { border-color: var(--accent); }
+
+.metric-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: var(--space-2);
+}
+.metric-value {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+.metric-sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: var(--space-1);
+  font-family: var(--font-mono);
+}
+
+/* ── Metric ext (smaller secondary stat — 8-per-row grids) ───────────── */
+.metric-ext {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--bg-border);
+  border-radius: var(--radius-md);
+}
+.metric-ext-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.metric-ext-value {
+  font-size: var(--text-md);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+/* ── Chart panel (panel variant with chart-specific header) ───────────── */
+.chart-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--bg-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: var(--space-4);
+}
+.chart-panel:last-child { margin-bottom: 0; }
+
+.chart-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--bg-border);
+  background: var(--bg-elevated);
+}
+.chart-panel-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.chart-panel-body { padding: var(--space-4); }
+
+/* ── Placeholder card (empty / coming-soon state) ────────────────────── */
+.placeholder-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-12) var(--space-6);
+  text-align: center;
+  background: var(--bg-surface);
+  border: 1px dashed var(--bg-border);
+  border-radius: var(--radius-xl);
+}
+.placeholder-icon  { font-size: 48px; color: var(--text-muted); opacity: 0.5; }
+.placeholder-title { font-size: var(--text-lg); font-weight: 600; color: var(--text-secondary); }
+.placeholder-body  {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  max-width: 480px;
+  line-height: 1.7;
+}
+.placeholder-body ul {
+  list-style: none; padding: 0; margin-top: var(--space-3);
+  text-align: left; display: inline-block;
+}
+.placeholder-body ul li {
+  display: flex; align-items: center;
+  gap: var(--space-2); margin-bottom: var(--space-2);
+}
+.placeholder-body ul li i { color: var(--accent); font-size: var(--text-xs); }
+
+/* ── Run / async status text ─────────────────────────────────────────── */
+.run-status         { font-size: var(--text-sm); color: var(--text-muted); font-family: var(--font-mono); }
+.run-status.running { color: var(--yellow); }
+.run-status.done    { color: var(--green); }
+.run-status.error   { color: var(--red); }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.7s linear infinite; }

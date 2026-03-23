@@ -162,3 +162,51 @@ window.debounce = function(fn, wait) {
   let t;
   return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
 };
+
+/* ── Paisa — high-level chart & UI helpers ───────────────────────────────── */
+window.Paisa = {
+
+  /**
+   * Drop-in Plotly.newPlot with dark theme pre-applied.
+   * @param {string|HTMLElement} el   - DOM id or element
+   * @param {Array}  traces           - Plotly trace array
+   * @param {Object} layoutOverrides  - merged on top of plotlyTheme()
+   * @param {Object} configOverrides  - merged on top of safe defaults
+   */
+  plot(el, traces, layoutOverrides = {}, configOverrides = {}) {
+    const layout = plotlyTheme(layoutOverrides);
+    const config = Object.assign({
+      responsive:   true,
+      displaylogo:  false,
+      modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'],
+    }, configOverrides);
+    return Plotly.newPlot(el, traces, layout, config);
+  },
+
+  /** React to container resize (call from ResizeObserver or window resize). */
+  resize(el) {
+    Plotly.Plots.resize(typeof el === 'string' ? document.getElementById(el) : el);
+  },
+
+  /**
+   * Score → badge class suffix (green / yellow / red / muted).
+   * Matches the .badge-* variants in components.css.
+   */
+  scoreBadge(score) {
+    if (score == null || isNaN(score)) return 'muted';
+    if (score >= 0.65) return 'green';
+    if (score >= 0.40) return 'yellow';
+    return 'red';
+  },
+
+  /** Signal string → badge class suffix. */
+  signalBadge(sig) {
+    const map = { LONG: 'green', SHORT: 'red', NEUTRAL: 'muted', AVOID: 'orange' };
+    return map[(sig || '').toUpperCase()] || 'muted';
+  },
+
+  /** Regime string → CSS class modifier (matches .regime-pill variants). */
+  regimeClass(regime) {
+    return 'regime-' + (regime || 'consolidation').toLowerCase().replace(/[^a-z_]/g, '');
+  },
+};
