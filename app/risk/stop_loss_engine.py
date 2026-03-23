@@ -24,6 +24,22 @@ class StopLossEngine:
 
     # ── thresholds ──────────────────────────────────────────────────
 
+    # Default thresholds per direction.
+    # Long positions use tighter stops; short positions use wider stops
+    # to accommodate higher volatility of mean-reversion short trades.
+    _DEFAULTS = {
+        'long': {
+            'position_stop_loss': -0.05,
+            'position_trailing_stop': -0.08,
+            'position_soft_warn': -0.03,
+        },
+        'short': {
+            'position_stop_loss': -0.07,
+            'position_trailing_stop': -0.10,
+            'position_soft_warn': -0.04,
+        },
+    }
+
     def _threshold(self, key: str, default: float) -> float:
         if self._config is not None:
             return self._config.get_float('risk', key, default)
@@ -33,6 +49,28 @@ class StopLossEngine:
                 return float(raw.decode() if isinstance(raw, bytes) else raw)
         return default
 
+    def _get_thresholds(self, direction: str = 'long') -> dict[str, float]:
+        """Return stop-loss thresholds for the given direction.
+
+        Config keys:
+            long  → position_stop_loss, position_trailing_stop, position_soft_warn
+            short → short_stop_loss, short_trailing_stop, short_soft_warn
+        """
+        defaults = self._DEFAULTS.get(direction, self._DEFAULTS['long'])
+        if direction == 'short':
+            return {
+                'hard': self._threshold('short_stop_loss', defaults['position_stop_loss']),
+                'trailing': self._threshold('short_trailing_stop', defaults['position_trailing_stop']),
+                'soft': self._threshold('short_soft_warn', defaults['position_soft_warn']),
+            }
+        return {
+            'hard': self._threshold('position_stop_loss', defaults['position_stop_loss']),
+            'trailing': self._threshold('position_trailing_stop', defaults['position_trailing_stop']),
+            'soft': self._threshold('position_soft_warn', defaults['position_soft_warn']),
+        }
+
+    # Legacy properties for backward compatibility with tests / callers
+    # that don't pass direction.
     @property
     def hard_stop_pct(self) -> float:
         return self._threshold('position_stop_loss', -0.05)
@@ -54,26 +92,40 @@ class StopLossEngine:
         entry_price: float,
         current_price: float,
         high_watermark: float,
+        direction: str = 'long',
     ) -> dict:
         """Evaluate a single position against the stop-loss ladder.
 
+        For short positions the PnL direction is inverted: price going *up*
+        is a loss.  Thresholds are loaded from direction-specific config keys
+        (``short_stop_loss`` etc.) so longs and shorts can have independent
+        stop parameters.
+
         Returns:
             dict with keys: action ('exit'|'reduce'|'ok'),
-            reason, from_entry, from_hwm.
+            reason, from_entry, from_hwm, direction.
         """
         if entry_price <= 0 or high_watermark <= 0:
             return self._result('ok', 'invalid_price', 0.0, 0.0)
 
-        from_entry = (current_price - entry_price) / entry_price
-        from_hwm = (current_price - high_watermark) / high_watermark
+        thresholds = self._get_thresholds(direction)
 
-        # 1. Hard stop — -5% from entry
-        if from_entry < self.hard_stop_pct:
+        # For short positions, loss = price going UP, so invert the ratio.
+        if direction == 'short':
+            from_entry = (entry_price - current_price) / entry_price
+            from_hwm = (high_watermark - current_price) / high_watermark
+        else:
+            from_entry = (current_price - entry_price) / entry_price
+            from_hwm = (current_price - high_watermark) / high_watermark
+
+        # 1. Hard stop
+        if from_entry < thresholds['hard']:
             self._log.warning(
                 'hard_stop_triggered',
                 symbol=symbol,
+                direction=direction,
                 from_entry=round(from_entry, 4),
-                threshold=self.hard_stop_pct,
+                threshold=thresholds['hard'],
             )
             return self._result(
                 'exit',
@@ -81,14 +133,15 @@ class StopLossEngine:
                 from_entry, from_hwm,
             )
 
-        # 2. Trailing stop — -8% from high-water mark
-        if from_hwm < self.trailing_stop_pct:
+        # 2. Trailing stop
+        if from_hwm < thresholds['trailing']:
             self._log.warning(
                 'trailing_stop_triggered',
                 symbol=symbol,
+                direction=direction,
                 from_hwm=round(from_hwm, 4),
                 hwm=high_watermark,
-                threshold=self.trailing_stop_pct,
+                threshold=thresholds['trailing'],
             )
             return self._result(
                 'exit',
@@ -96,11 +149,12 @@ class StopLossEngine:
                 from_entry, from_hwm,
             )
 
-        # 3. Soft warning — -3% from entry → reduce 50%
-        if from_entry < self.soft_warn_pct:
+        # 3. Soft warning → reduce 50%
+        if from_entry < thresholds['soft']:
             self._log.info(
                 'soft_warning',
                 symbol=symbol,
+                direction=direction,
                 from_entry=round(from_entry, 4),
             )
             return self._result(
@@ -170,11 +224,14 @@ class StopLossEngine:
                 float(pos.get('high_watermark', pos['entry_price'])),
             )
 
+            direction = pos.get('direction', 'long')
+
             result = self.check_position(
                 symbol=symbol,
                 entry_price=float(pos['entry_price']),
                 current_price=current,
                 high_watermark=hwm,
+                direction=direction,
             )
 
             if result['action'] == 'exit':

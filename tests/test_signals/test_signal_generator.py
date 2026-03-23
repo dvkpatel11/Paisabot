@@ -32,6 +32,24 @@ class TestClassifySignal:
         assert classify_signal(0.40, 'trending') == 'neutral'
         assert classify_signal(0.3999, 'trending') == 'avoid'
 
+    def test_short_signal_risk_off(self):
+        # Short only emitted when allow_short=True + risk_off + score < 0.25
+        assert classify_signal(0.20, 'risk_off', allow_short=True) == 'short'
+        assert classify_signal(0.10, 'risk_off', allow_short=True) == 'short'
+
+    def test_short_requires_risk_off(self):
+        # Not risk_off → avoid, not short
+        assert classify_signal(0.20, 'trending', allow_short=True) == 'avoid'
+
+    def test_short_requires_allow_short(self):
+        # allow_short=False → avoid even in risk_off
+        assert classify_signal(0.20, 'risk_off', allow_short=False) == 'avoid'
+
+    def test_short_boundary_025(self):
+        # 0.25 is NOT < 0.25, so it should be avoid (not short)
+        assert classify_signal(0.25, 'risk_off', allow_short=True) == 'avoid'
+        assert classify_signal(0.2499, 'risk_off', allow_short=True) == 'short'
+
 
 class TestSignalGenerator:
     @pytest.fixture

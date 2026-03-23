@@ -139,3 +139,53 @@ class TestStopLossConfig:
         # -6% from HWM with custom -5% trailing
         result = eng.check_position('XLK', 100.0, 99.0, 105.3)
         assert result['action'] == 'exit'
+
+
+# ── short position checks ─────────────────────────────────────────
+
+class TestShortPositionStops:
+    def test_short_ok(self, engine):
+        # Short at 100, price dropped to 95 → profitable, no stop
+        result = engine.check_position('XLK', 100.0, 95.0, 95.0, direction='short')
+        assert result['action'] == 'ok'
+
+    def test_short_hard_stop(self, engine):
+        # Short at 100, price rises to 108 → -8% loss (default short hard stop = -7%)
+        result = engine.check_position('XLK', 100.0, 108.0, 92.0, direction='short')
+        assert result['action'] == 'exit'
+        assert 'hard_stop' in result['reason']
+
+    def test_short_trailing_stop(self, engine):
+        # Short at 100, best was 88 (HWM=88), now 97.5 → loss from HWM
+        # from_hwm = (88 - 97.5) / 88 = -0.108 < -0.10 trailing
+        result = engine.check_position('XLK', 100.0, 97.5, 88.0, direction='short')
+        assert result['action'] == 'exit'
+        assert 'trailing_stop' in result['reason']
+
+    def test_short_soft_warn(self, engine):
+        # Short at 100, price rises to 105 → -5% loss (> -7% hard, but < -4% soft)
+        result = engine.check_position('XLK', 100.0, 105.0, 98.0, direction='short')
+        assert result['action'] == 'reduce'
+        assert 'soft_warn' in result['reason']
+
+    def test_short_custom_config(self, redis):
+        redis.hset('config:risk', 'short_stop_loss', '-0.04')
+        eng = StopLossEngine(redis_client=redis)
+        # Short at 100, price rises to 105 → -5% loss, custom -4% threshold
+        result = eng.check_position('XLK', 100.0, 105.0, 98.0, direction='short')
+        assert result['action'] == 'exit'
+
+    def test_scan_with_mixed_directions(self, engine):
+        positions = [
+            {'symbol': 'XLK', 'entry_price': 100, 'high_watermark': 105,
+             'status': 'open', 'direction': 'long'},
+            {'symbol': 'XLE', 'entry_price': 50, 'high_watermark': 48,
+             'status': 'open', 'direction': 'short'},
+        ]
+        # XLK: long, current 93 → -7% from entry → hard stop (long -5%)
+        # XLE: short at 50, current 48 → profit (entry-current)/entry = 4%
+        prices = {'XLK': 93, 'XLE': 48}
+        result = engine.scan_all_positions(positions, prices)
+        assert len(result['exits']) == 1
+        assert result['exits'][0]['symbol'] == 'XLK'
+        assert result['ok_count'] == 1
