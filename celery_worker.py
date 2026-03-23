@@ -73,6 +73,27 @@ def make_celery(app=None):
                 'task': 'app.risk.run_continuous_monitor',
                 'schedule': crontab(minute='*/5'),
             },
+            # ── Stock data & fundamentals ────────────────────────────
+            'refresh-stock-bars-daily': {
+                'task': 'app.data.refresh_all_stock_bars',
+                'schedule': crontab(hour=17, minute=5),
+            },
+            'refresh-stock-fundamentals-daily': {
+                'task': 'app.data.refresh_stock_fundamentals',
+                'schedule': crontab(hour=17, minute=20),
+            },
+            'refresh-earnings-calendar-daily': {
+                'task': 'app.data.refresh_earnings_calendar',
+                'schedule': crontab(hour=17, minute=35),
+            },
+            'compute-stock-factors-daily': {
+                'task': 'app.data.compute_stock_factors',
+                'schedule': crontab(hour=18, minute=5),
+            },
+            'launch-stock-pipeline-daily': {
+                'task': 'app.pipeline.launch_stock_pipeline',
+                'schedule': crontab(hour=18, minute=20),
+            },
         },
     })
     return celery
@@ -84,5 +105,6 @@ celery = make_celery()
 # decorators register with this app. tasks.py does `from celery_worker
 # import celery` — so celery must exist before this import runs.
 import app.data.tasks  # noqa: E402, F401
+import app.data.fundamentals_tasks  # noqa: E402, F401
 import app.pipeline.tasks  # noqa: E402, F401
 import app.risk.tasks  # noqa: E402, F401

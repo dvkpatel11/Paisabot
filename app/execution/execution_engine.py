@@ -251,6 +251,8 @@ class ExecutionEngine:
                 ),
                 signal_composite=result.get('signal_composite'),
                 regime=result.get('regime'),
+                asset_class=result.get('asset_class', 'etf'),
+                account_id=result.get('account_id'),
             )
             self._db.add(trade)
             self._db.commit()

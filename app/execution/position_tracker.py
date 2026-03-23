@@ -64,9 +64,16 @@ class PositionTracker:
         from app.models.positions import Position
 
         symbol = fill['symbol']
+        asset_class = fill.get('asset_class', 'etf')
+        account_id = fill.get('account_id')
         existing = (
             Position.query
-            .filter_by(symbol=symbol, status='open', direction='long')
+            .filter_by(
+                symbol=symbol,
+                status='open',
+                direction='long',
+                asset_class=asset_class,
+            )
             .first()
         )
 
@@ -98,6 +105,7 @@ class PositionTracker:
                 symbol=symbol,
                 new_qty=new_qty,
                 entry_price=float(existing.entry_price),
+                asset_class=asset_class,
             )
         else:
             pos = Position(
@@ -115,6 +123,8 @@ class PositionTracker:
                 sector=sector,
                 status='open',
                 opened_at=datetime.now(timezone.utc),
+                asset_class=asset_class,
+                account_id=account_id,
             )
             self._db.add(pos)
             self._log.info(
@@ -136,14 +146,20 @@ class PositionTracker:
         from app.models.positions import Position
 
         symbol = fill['symbol']
+        asset_class = fill.get('asset_class', 'etf')
         existing = (
             Position.query
-            .filter_by(symbol=symbol, status='open', direction='long')
+            .filter_by(
+                symbol=symbol,
+                status='open',
+                direction='long',
+                asset_class=asset_class,
+            )
             .first()
         )
 
         if not existing:
-            self._log.warning('sell_no_open_position', symbol=symbol)
+            self._log.warning('sell_no_open_position', symbol=symbol, asset_class=asset_class)
             return
 
         current_qty = float(existing.quantity or 0)
@@ -193,14 +209,23 @@ class PositionTracker:
         self,
         current_prices: dict[str, float],
         portfolio_value: float,
+        asset_class: str | None = None,
     ) -> list[dict]:
         """Update all open positions with current market prices.
+
+        Args:
+            current_prices: {symbol: price} mapping.
+            portfolio_value: total portfolio NAV.
+            asset_class: filter to a specific asset class (None = all).
 
         Returns list of position dicts for downstream consumers.
         """
         from app.models.positions import Position
 
-        positions = Position.query.filter_by(status='open').all()
+        query = Position.query.filter_by(status='open')
+        if asset_class is not None:
+            query = query.filter_by(asset_class=asset_class)
+        positions = query.all()
         result = []
 
         for pos in positions:
@@ -230,8 +255,11 @@ class PositionTracker:
         self._db.commit()
         return result
 
-    def get_positions_summary(self) -> dict:
+    def get_positions_summary(self, asset_class: str | None = None) -> dict:
         """Get summary of all open positions.
+
+        Args:
+            asset_class: filter to a specific asset class (None = all).
 
         Returns:
             {
@@ -243,7 +271,10 @@ class PositionTracker:
         """
         from app.models.positions import Position
 
-        positions = Position.query.filter_by(status='open').all()
+        query = Position.query.filter_by(status='open')
+        if asset_class is not None:
+            query = query.filter_by(asset_class=asset_class)
+        positions = query.all()
         weights = {}
         pos_list = []
         total_notional = 0.0

@@ -54,10 +54,13 @@ def run_continuous_monitor(self):
             risk_mgr = RiskManager(redis_client, config)
             pos_tracker = PositionTracker(_db.session, redis_client)
 
-            # 1. Load open positions
+            # 1. Load open positions — monitor both asset classes
             positions = Position.query.filter_by(status='open').all()
             if not positions:
                 return {'status': 'ok', 'reason': 'no_positions'}
+
+            # Track asset classes present for ADV key lookup
+            position_asset_classes = {p.asset_class or 'etf' for p in positions}
 
             symbols = [p.symbol for p in positions]
             positions_list = [
@@ -155,11 +158,21 @@ def run_continuous_monitor(self):
                     ).sort_index()
             prices_df = pd.DataFrame(frames).dropna(how='all') if frames else pd.DataFrame()
 
-            # 6. Get ADVs for liquidity check
+            # 6. Get ADVs for liquidity check — try both etf: and stock: prefixes
             current_advs = {}
             for sym in symbols:
                 if redis_client:
-                    raw = redis_client.get(f'etf:{sym}:adv_30d_m')
+                    # Determine prefix from position's asset_class
+                    pos_ac = next(
+                        (p.asset_class or 'etf' for p in positions if p.symbol == sym),
+                        'etf',
+                    )
+                    prefix = 'stock' if pos_ac == 'stock' else 'etf'
+                    raw = redis_client.get(f'{prefix}:{sym}:adv_30d_m')
+                    if raw is None:
+                        # Fallback: try the other prefix
+                        alt = 'etf' if prefix == 'stock' else 'stock'
+                        raw = redis_client.get(f'{alt}:{sym}:adv_30d_m')
                     if raw:
                         try:
                             current_advs[sym] = float(raw)

@@ -446,6 +446,7 @@ class OrderManager:
                 'filled_qty': result.get('filled_qty'),
                 'actual_slippage_bps': result.get('actual_slippage_bps'),
                 'timestamp': result.get('timestamp'),
+                'asset_class': result.get('asset_class', 'etf'),
             }
             payload = json.dumps(event, default=str)
             self._redis.publish('channel:fills', payload)
@@ -462,6 +463,8 @@ class OrderManager:
             'side': order['side'],
             'notional': order['notional'],
             'status': status,
+            'asset_class': order.get('asset_class', 'etf'),
+            'account_id': order.get('account_id'),
         }
         result.update(kwargs)
         if 'timestamp' in result and hasattr(result['timestamp'], 'isoformat'):

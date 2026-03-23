@@ -16,6 +16,7 @@ def ingest_daily_bars(
     symbol: str,
     df: pd.DataFrame,
     source: str = 'alpaca',
+    asset_class: str = 'etf',
 ) -> int:
     """Bulk-insert daily bars into price_bars table.
 
@@ -44,6 +45,7 @@ def ingest_daily_bars(
             ),
             'is_synthetic': False,
             'source': source,
+            'asset_class': asset_class,
         })
 
     if not rows:
@@ -144,6 +146,7 @@ def detect_gaps(
 def fill_gaps_with_synthetic(
     symbol: str,
     gap_dates: list[date],
+    asset_class: str = 'etf',
 ) -> int:
     """Fill missing dates with synthetic bars (carry-forward close).
 
@@ -195,6 +198,7 @@ def fill_gaps_with_synthetic(
             volume=0,
             is_synthetic=True,
             source='synthetic',
+            asset_class=asset_class,
         )
         db.session.add(synthetic)
         filled += 1
@@ -215,12 +219,13 @@ def detect_and_fill_gaps(
     start_date: date,
     end_date: date,
     trading_calendar: list[date] | None = None,
+    asset_class: str = 'etf',
 ) -> int:
     """Detect missing trading days and fill with synthetic bars."""
     gaps = detect_gaps(symbol, start_date, end_date, trading_calendar)
     if not gaps:
         return 0
-    return fill_gaps_with_synthetic(symbol, gaps)
+    return fill_gaps_with_synthetic(symbol, gaps, asset_class=asset_class)
 
 
 def update_redis_cache(

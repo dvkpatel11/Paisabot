@@ -10,7 +10,7 @@ logger = structlog.get_logger()
 
 
 @celery.task(name='app.data.backfill_bars', bind=True, max_retries=2)
-def backfill_bars(self, symbol: str, days: int = 756):
+def backfill_bars(self, symbol: str, days: int = 756, asset_class: str = 'etf'):
     """Backfill historical daily bars for a single symbol."""
     from app import create_app
     app = create_app()
@@ -33,6 +33,7 @@ def backfill_bars(self, symbol: str, days: int = 756):
                 symbol=symbol,
                 start=str(start_date),
                 end=str(end_date),
+                asset_class=asset_class,
             )
 
             df = provider.get_daily_bars(symbol, start_date, end_date)
@@ -40,7 +41,7 @@ def backfill_bars(self, symbol: str, days: int = 756):
                 logger.warning('backfill_no_data', symbol=symbol)
                 return {'symbol': symbol, 'inserted': 0}
 
-            inserted = ingest_daily_bars(symbol, df, source='alpaca')
+            inserted = ingest_daily_bars(symbol, df, source='alpaca', asset_class=asset_class)
             update_redis_cache(symbol, df, redis_client)
 
             logger.info(
@@ -56,7 +57,7 @@ def backfill_bars(self, symbol: str, days: int = 756):
 
 
 @celery.task(name='app.data.refresh_daily_bars', bind=True, max_retries=3)
-def refresh_daily_bars(self, symbol: str):
+def refresh_daily_bars(self, symbol: str, asset_class: str = 'etf'):
     """Fetch the latest daily bar for a symbol and ingest it."""
     from app import create_app
     app = create_app()
@@ -78,7 +79,7 @@ def refresh_daily_bars(self, symbol: str):
             if df.empty:
                 return {'symbol': symbol, 'inserted': 0}
 
-            inserted = ingest_daily_bars(symbol, df, source='alpaca')
+            inserted = ingest_daily_bars(symbol, df, source='alpaca', asset_class=asset_class)
             update_redis_cache(symbol, df, redis_client)
 
             return {'symbol': symbol, 'inserted': inserted}
@@ -184,6 +185,7 @@ def compute_all_factors(self):
             registry = FactorRegistry(
                 redis_client=redis_client,
                 db_session=_db.session,
+                asset_class='etf',
             )
             scores = registry.compute_all(symbols)
 
@@ -201,6 +203,7 @@ def compute_all_factors(self):
             generator = SignalGenerator(
                 redis_client=redis_client,
                 db_session=_db.session,
+                asset_class='etf',
             )
             signals = generator.run(symbols)
 

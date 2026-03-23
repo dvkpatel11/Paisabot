@@ -22,12 +22,15 @@ class RiskManager:
     Also provides helper methods for the dashboard/API layer.
     """
 
-    def __init__(self, redis_client, config_loader=None):
+    def __init__(self, redis_client, config_loader=None, asset_class: str = 'etf'):
         self._redis = redis_client
         self._config = config_loader
-        self._log = logger.bind(component='risk_manager')
+        self._asset_class = asset_class
+        self._log = logger.bind(component='risk_manager', asset_class=asset_class)
 
-        self.gate = PreTradeGate(redis_client, config_loader)
+        self.gate = PreTradeGate(
+            redis_client, config_loader, asset_class=asset_class,
+        )
         self.monitor_ = ContinuousMonitor(redis_client, config_loader)
 
     # ── pre-trade ───────────────────────────────────────────────────

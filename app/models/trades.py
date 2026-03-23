@@ -23,6 +23,10 @@ class Trade(db.Model):
     fill_time = db.Column(db.DateTime(timezone=True))
     signal_composite = db.Column(db.Numeric(6, 4))
     regime = db.Column(db.String(20))
+    asset_class = db.Column(
+        db.String(10), nullable=False, default='etf', server_default='etf', index=True,
+    )  # 'etf' or 'stock'
+    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=True)
 
     def __repr__(self):
         return f'<Trade {self.symbol} {self.side} {self.status}>'

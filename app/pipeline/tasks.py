@@ -11,11 +11,15 @@ the ``pipeline_error_handler`` callback fires:
 * Sets ``kill_switch:rebalance = 1`` if the failure was in execution.
 * Publishes an error event to ``channel:risk_alerts`` for the dashboard.
 
+Dual pipeline support:
+  - ``launch_pipeline()``       → ETF pipeline (asset_class='etf')
+  - ``launch_stock_pipeline()`` → Stock pipeline (asset_class='stock')
+
 Usage::
 
-    from app.pipeline.tasks import launch_pipeline
-    launch_pipeline.delay()          # fire-and-forget from Celery Beat
-    result = launch_pipeline.apply()  # synchronous (tests / flask shell)
+    from app.pipeline.tasks import launch_pipeline, launch_stock_pipeline
+    launch_pipeline.delay()          # ETF — fire-and-forget from Celery Beat
+    launch_stock_pipeline.delay()    # Stock
 """
 from __future__ import annotations
 
@@ -32,10 +36,11 @@ logger = structlog.get_logger()
 
 # ─── helpers ──────────────────────────────────────────────────────────
 
-def _make_orchestrator():
+def _make_orchestrator(asset_class: str = 'etf'):
     """Create a PipelineOrchestrator inside an app context.
 
-    Returns (app, orchestrator) so the caller can use the app context.
+    Returns (app_ctx, orchestrator, redis_client) so the caller can
+    use the app context.
     """
     from app import create_app
     app = create_app()
@@ -51,6 +56,7 @@ def _make_orchestrator():
         redis_client=redis_client,
         db_session=_db.session,
         config_loader=config,
+        asset_class=asset_class,
     )
     return ctx, orchestrator, redis_client
 
@@ -73,16 +79,16 @@ def _teardown(ctx):
     soft_time_limit=60,
     time_limit=90,
 )
-def stage_load_data(self):
+def stage_load_data(self, asset_class: str = 'etf'):
     """Fetch signals, positions, prices, regime, drawdown.
 
     Returns a JSON-serializable dict consumed by stage_portfolio.
     """
-    ctx, orchestrator, _ = _make_orchestrator()
+    ctx, orchestrator, _ = _make_orchestrator(asset_class)
     try:
         return orchestrator.load_data()
     except Exception as exc:
-        logger.error('stage_load_data_failed', error=str(exc))
+        logger.error('stage_load_data_failed', error=str(exc), asset_class=asset_class)
         raise self.retry(exc=exc)
     finally:
         _teardown(ctx)
@@ -103,11 +109,12 @@ def stage_portfolio(self, pipeline_data: dict):
     if pipeline_data.get('status') == 'stopped':
         return pipeline_data
 
-    ctx, orchestrator, _ = _make_orchestrator()
+    asset_class = pipeline_data.get('asset_class', 'etf')
+    ctx, orchestrator, _ = _make_orchestrator(asset_class)
     try:
         return orchestrator.portfolio(pipeline_data)
     except Exception as exc:
-        logger.error('stage_portfolio_failed', error=str(exc))
+        logger.error('stage_portfolio_failed', error=str(exc), asset_class=asset_class)
         raise self.retry(exc=exc)
     finally:
         _teardown(ctx)
@@ -128,11 +135,12 @@ def stage_risk_gate(self, pipeline_data: dict):
     if pipeline_data.get('status') == 'stopped':
         return pipeline_data
 
-    ctx, orchestrator, _ = _make_orchestrator()
+    asset_class = pipeline_data.get('asset_class', 'etf')
+    ctx, orchestrator, _ = _make_orchestrator(asset_class)
     try:
         return orchestrator.risk_gate(pipeline_data)
     except Exception as exc:
-        logger.error('stage_risk_gate_failed', error=str(exc))
+        logger.error('stage_risk_gate_failed', error=str(exc), asset_class=asset_class)
         raise self.retry(exc=exc)
     finally:
         _teardown(ctx)
@@ -156,11 +164,12 @@ def stage_execute(self, pipeline_data: dict):
     if pipeline_data.get('status') == 'stopped':
         return pipeline_data
 
-    ctx, orchestrator, _ = _make_orchestrator()
+    asset_class = pipeline_data.get('asset_class', 'etf')
+    ctx, orchestrator, _ = _make_orchestrator(asset_class)
     try:
         return orchestrator.execute(pipeline_data)
     except Exception as exc:
-        logger.critical('stage_execute_failed', error=str(exc))
+        logger.critical('stage_execute_failed', error=str(exc), asset_class=asset_class)
         raise  # propagate — do NOT retry
     finally:
         _teardown(ctx)
@@ -178,11 +187,12 @@ def stage_execute(self, pipeline_data: dict):
 )
 def stage_record(self, pipeline_data: dict):
     """Publish pipeline summary to Redis + dashboard."""
-    ctx, orchestrator, _ = _make_orchestrator()
+    asset_class = pipeline_data.get('asset_class', 'etf')
+    ctx, orchestrator, _ = _make_orchestrator(asset_class)
     try:
         return orchestrator.record(pipeline_data)
     except Exception as exc:
-        logger.error('stage_record_failed', error=str(exc))
+        logger.error('stage_record_failed', error=str(exc), asset_class=asset_class)
         raise self.retry(exc=exc)
     finally:
         _teardown(ctx)
@@ -252,11 +262,11 @@ def pipeline_error_handler(request, exc, traceback):
         )
 
 
-# ─── chain launcher ──────────────────────────────────────────────────
+# ─── chain launchers ─────────────────────────────────────────────────
 
 @celery.task(name='app.pipeline.launch_pipeline')
 def launch_pipeline():
-    """Build and dispatch the pipeline chain.
+    """Build and dispatch the ETF pipeline chain.
 
     Called by Celery Beat at 18:15 ET daily.  Can also be called
     manually from ``flask shell``::
@@ -264,10 +274,10 @@ def launch_pipeline():
         from app.pipeline.tasks import launch_pipeline
         launch_pipeline.delay()
     """
-    logger.info('pipeline_chain_launching')
+    logger.info('pipeline_chain_launching', asset_class='etf')
 
     pipeline_chain = chain(
-        stage_load_data.s(),
+        stage_load_data.s('etf'),
         stage_portfolio.s(),
         stage_risk_gate.s(),
         stage_execute.s(),
@@ -278,8 +288,32 @@ def launch_pipeline():
         link_error=pipeline_error_handler.s(),
     )
 
-    logger.info('pipeline_chain_dispatched', chain_id=result.id)
-    return {'chain_id': result.id, 'status': 'dispatched'}
+    logger.info('pipeline_chain_dispatched', chain_id=result.id, asset_class='etf')
+    return {'chain_id': result.id, 'asset_class': 'etf', 'status': 'dispatched'}
+
+
+@celery.task(name='app.pipeline.launch_stock_pipeline')
+def launch_stock_pipeline():
+    """Build and dispatch the Stock pipeline chain.
+
+    Called by Celery Beat at 18:20 ET daily (after ETF pipeline).
+    """
+    logger.info('pipeline_chain_launching', asset_class='stock')
+
+    pipeline_chain = chain(
+        stage_load_data.s('stock'),
+        stage_portfolio.s(),
+        stage_risk_gate.s(),
+        stage_execute.s(),
+        stage_record.s(),
+    )
+
+    result = pipeline_chain.apply_async(
+        link_error=pipeline_error_handler.s(),
+    )
+
+    logger.info('pipeline_chain_dispatched', chain_id=result.id, asset_class='stock')
+    return {'chain_id': result.id, 'asset_class': 'stock', 'status': 'dispatched'}
 
 
 # ─── legacy compat (kept for tests that import the old name) ─────────

@@ -6,3 +6,4 @@ from app.api import routes  # noqa: E402, F401
 from app.api import research_routes  # noqa: E402, F401
 from app.api import simulation_routes  # noqa: E402, F401
 from app.api import service_routes  # noqa: E402, F401
+from app.api import stock_routes  # noqa: E402, F401

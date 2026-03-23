@@ -12,6 +12,8 @@ from app.factors.breadth import BreadthFactor
 from app.factors.liquidity import LiquidityFactor
 from app.factors.slippage import SlippageFactor
 from app.factors.sentiment import SentimentFactor
+from app.factors.fundamentals import FundamentalsFactor
+from app.factors.earnings import EarningsFactor
 
 logger = structlog.get_logger()
 
@@ -22,35 +24,79 @@ class FactorRegistry:
     Manages factor lifecycle, compute_all orchestration,
     and output to Redis + PostgreSQL.
 
+    Parameterized by asset_class ('etf' or 'stock') to load
+    the correct factor set. Shared factors (trend, vol, sentiment,
+    liquidity) use identical code — only the set differs.
+
     Note: Dispersion factor (F04) removed from active composite.
     Class remains in app/factors/dispersion.py for research use.
     """
 
+    # ── all known factors ────────────────────────────────────────
     AVAILABLE_FACTORS: dict[str, type[FactorBase]] = {
+        # shared
         'trend_score': TrendFactor,
         'volatility_regime': VolatilityFactor,
         'sentiment_score': SentimentFactor,
+        'liquidity_score': LiquidityFactor,
+        # ETF-only
         'correlation_index': CorrelationFactor,
         'breadth_score': BreadthFactor,
-        'liquidity_score': LiquidityFactor,
         'slippage_estimator': SlippageFactor,
+        # stock-only
+        'fundamentals_score': FundamentalsFactor,
+        'earnings_score': EarningsFactor,
     }
 
-    def __init__(self, redis_client=None, db_session=None, config_loader=None):
+    # ── factor sets per asset class ──────────────────────────────
+    FACTOR_SETS: dict[str, list[str]] = {
+        'etf': [
+            'trend_score',
+            'volatility_regime',
+            'sentiment_score',
+            'correlation_index',
+            'breadth_score',
+            'liquidity_score',
+            'slippage_estimator',
+        ],
+        'stock': [
+            'trend_score',
+            'volatility_regime',
+            'sentiment_score',
+            'liquidity_score',
+            'fundamentals_score',
+            'earnings_score',
+        ],
+    }
+
+    def __init__(
+        self,
+        redis_client=None,
+        db_session=None,
+        config_loader=None,
+        asset_class: str = 'etf',
+    ):
         self._redis = redis_client
         self._db_session = db_session
         self._config = config_loader
-        self._log = logger.bind(component='factor_registry')
+        self._asset_class = asset_class
+        self._log = logger.bind(
+            component='factor_registry', asset_class=asset_class,
+        )
 
-        # Determine enabled factors from config
+        # Determine enabled factors: asset_class set filtered by config
+        default_names = self.FACTOR_SETS.get(asset_class, self.FACTOR_SETS['etf'])
+
         enabled = 'all'
         if config_loader:
             enabled = config_loader.get('factors', 'enabled_factors', default='all')
 
         if enabled == 'all':
-            names = list(self.AVAILABLE_FACTORS.keys())
+            names = list(default_names)
         else:
-            names = [n.strip() for n in enabled.split(',')]
+            config_names = [n.strip() for n in enabled.split(',')]
+            # Intersect config with asset class set
+            names = [n for n in config_names if n in default_names]
 
         self.factors: dict[str, FactorBase] = {}
         for name in names:
@@ -62,7 +108,11 @@ class FactorRegistry:
                     config_loader=config_loader,
                 )
 
-        self._log.info('registry_initialized', factors=list(self.factors.keys()))
+        self._log.info(
+            'registry_initialized',
+            factors=list(self.factors.keys()),
+            asset_class=asset_class,
+        )
 
     def compute_all(
         self, symbols: list[str],
@@ -115,24 +165,25 @@ class FactorRegistry:
         return factor.compute(symbols)
 
     def _cache_results(self, results: dict[str, dict[str, float]]) -> None:
-        """Cache factor scores in Redis."""
+        """Cache factor scores in Redis, namespaced by asset class."""
         if self._redis is None:
             return
 
         import json
+        prefix = f'{self._asset_class}:' if self._asset_class != 'etf' else ''
 
         for symbol, scores in results.items():
             # Per-symbol composite cache (15min TTL)
-            key = f'scores:{symbol}'
+            key = f'{prefix}scores:{symbol}'
             self._redis.set(key, json.dumps(scores), ex=900)
 
             # Per-factor cache (1h TTL)
             for factor_name, score in scores.items():
-                fkey = f'factor:{symbol}:{factor_name}'
+                fkey = f'{prefix}factor:{symbol}:{factor_name}'
                 self._redis.set(fkey, str(score), ex=3600)
 
     def _persist_results(self, results: dict[str, dict[str, float]]) -> None:
-        """Persist factor scores to PostgreSQL."""
+        """Persist factor scores to PostgreSQL with asset_class tag."""
         try:
             from app.models.factor_scores import FactorScore
             from app.extensions import db
@@ -149,6 +200,9 @@ class FactorRegistry:
                     breadth_score=scores.get('breadth_score'),
                     liquidity_score=scores.get('liquidity_score'),
                     slippage_score=scores.get('slippage_estimator'),
+                    fundamentals_score=scores.get('fundamentals_score'),
+                    earnings_score=scores.get('earnings_score'),
+                    asset_class=self._asset_class,
                 )
                 db.session.add(record)
 
@@ -163,10 +217,16 @@ class FactorRegistry:
 
         try:
             import json
+            channel = (
+                'channel:factor_scores'
+                if self._asset_class == 'etf'
+                else f'channel:factor_scores:{self._asset_class}'
+            )
             self._redis.publish(
-                'channel:factor_scores',
+                channel,
                 json.dumps({
                     'timestamp': datetime.now(timezone.utc).isoformat(),
+                    'asset_class': self._asset_class,
                     'scores': results,
                 }),
             )
@@ -176,3 +236,8 @@ class FactorRegistry:
     def get_enabled_factors(self) -> list[str]:
         """Return list of enabled factor names."""
         return list(self.factors.keys())
+
+    @property
+    def asset_class(self) -> str:
+        """Return the asset class this registry is configured for."""
+        return self._asset_class

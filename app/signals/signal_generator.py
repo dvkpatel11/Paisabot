@@ -50,20 +50,26 @@ class SignalGenerator:
         redis_client=None,
         db_session=None,
         config_loader=None,
+        asset_class: str = 'etf',
     ):
         self._redis = redis_client
         self._db_session = db_session
         self._config = config_loader
-        self._log = logger.bind(component='signal_generator')
+        self._asset_class = asset_class
+        self._log = logger.bind(
+            component='signal_generator', asset_class=asset_class,
+        )
 
         self.factors = FactorRegistry(
             redis_client=redis_client,
             db_session=db_session,
             config_loader=config_loader,
+            asset_class=asset_class,
         )
         self.scorer = CompositeScorer(
             redis_client=redis_client,
             config_loader=config_loader,
+            asset_class=asset_class,
         )
         self.regime = RegimeTracker(redis_client=redis_client)
         self.filter = SignalFilter(
@@ -135,9 +141,10 @@ class SignalGenerator:
             composite = float(ranked_df.loc[symbol, 'composite'])
             rank = int(ranked_df.loc[symbol, 'rank'])
 
-            # Get liquidity data for filter
-            adv_m = self._get_cached_float(f'etf:{symbol}:adv_30d_m')
-            spread_bps = self._get_cached_float(f'etf:{symbol}:spread_bps')
+            # Get liquidity data for filter (key prefix varies by asset class)
+            liq_prefix = 'etf' if self._asset_class == 'etf' else 'stock'
+            adv_m = self._get_cached_float(f'{liq_prefix}:{symbol}:adv_30d_m')
+            spread_bps = self._get_cached_float(f'{liq_prefix}:{symbol}:spread_bps')
 
             tradable, reason = self.filter.is_tradable(symbol, adv_m, spread_bps)
 
@@ -307,6 +314,7 @@ class SignalGenerator:
                     regime_confidence=confidence,
                     signal_type=sig['signal_type'],
                     block_reason=sig.get('block_reason'),
+                    asset_class=self._asset_class,
                 )
                 rows.append(row)
 

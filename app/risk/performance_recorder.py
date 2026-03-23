@@ -26,41 +26,74 @@ class PerformanceRecorder:
         self._log = logger.bind(component='performance_recorder')
 
     def record_daily(self, target_date: date | None = None) -> dict:
-        """Compute and persist daily performance metrics.
+        """Compute and persist daily performance metrics for both asset classes.
 
         Args:
             target_date: date to record for (defaults to today).
 
         Returns:
-            dict of computed metrics.
+            dict with per-asset-class results.
         """
-        from app.models.performance import PerformanceMetric
-        from app.models.positions import Position
-
         if target_date is None:
             target_date = date.today()
 
+        results = {}
+        for ac in ('etf', 'stock'):
+            result = self._record_for_asset_class(ac, target_date)
+            if result:
+                results[ac] = result
+
+        return results
+
+    def _record_for_asset_class(
+        self,
+        asset_class: str,
+        target_date: date,
+    ) -> dict | None:
+        """Compute and persist daily performance for a single asset class."""
+        from app.models.performance import PerformanceMetric
+        from app.models.positions import Position
+
         # 1. Compute portfolio value from open positions + initial capital
-        positions = Position.query.filter_by(status='open').all()
+        positions = Position.query.filter_by(
+            status='open', asset_class=asset_class,
+        ).all()
+
+        # Skip if no positions and no prior history for this asset class
+        prior_exists = PerformanceMetric.query.filter_by(
+            asset_class=asset_class,
+        ).first()
+        if not positions and not prior_exists:
+            return None
+
         total_notional = sum(float(p.notional or 0) for p in positions)
         total_unrealized = sum(float(p.unrealized_pnl or 0) for p in positions)
         total_realized = sum(float(p.realized_pnl or 0) for p in positions)
 
         # Also sum realized PnL from closed positions
-        closed = Position.query.filter_by(status='closed').all()
+        closed = Position.query.filter_by(
+            status='closed', asset_class=asset_class,
+        ).all()
         total_realized += sum(float(p.realized_pnl or 0) for p in closed)
 
-        initial_capital = self._get_initial_capital()
+        initial_capital = self._get_initial_capital(asset_class)
         portfolio_value = initial_capital + total_unrealized + total_realized
 
         num_positions = len(positions)
         cash = portfolio_value - total_notional
         cash_pct = cash / portfolio_value if portfolio_value > 0 else 1.0
 
+        # Update Account model if it exists
+        self._update_account(asset_class, portfolio_value, total_notional,
+                             total_realized, total_unrealized, cash)
+
         # 2. Get previous day's metric for daily return calc
         prev = (
             PerformanceMetric.query
-            .filter(PerformanceMetric.date < target_date)
+            .filter(
+                PerformanceMetric.date < target_date,
+                PerformanceMetric.asset_class == asset_class,
+            )
             .order_by(PerformanceMetric.date.desc())
             .first()
         )
@@ -80,6 +113,7 @@ class PerformanceRecorder:
         # 4. Drawdown from peak
         all_metrics = (
             PerformanceMetric.query
+            .filter_by(asset_class=asset_class)
             .order_by(PerformanceMetric.date.asc())
             .all()
         )
@@ -95,6 +129,7 @@ class PerformanceRecorder:
         # 5. Rolling 30-day Sharpe and volatility
         recent = (
             PerformanceMetric.query
+            .filter_by(asset_class=asset_class)
             .order_by(PerformanceMetric.date.desc())
             .limit(30)
             .all()
@@ -122,8 +157,13 @@ class PerformanceRecorder:
                 except (json.JSONDecodeError, TypeError):
                     pass
 
-        # 7. Upsert metric
-        existing = PerformanceMetric.query.filter_by(date=target_date).first()
+        # 7. Get account_id for FK
+        account_id = self._get_account_id(asset_class)
+
+        # 8. Upsert metric (unique on date + asset_class)
+        existing = PerformanceMetric.query.filter_by(
+            date=target_date, asset_class=asset_class,
+        ).first()
         if existing:
             existing.portfolio_value = Decimal(str(round(portfolio_value, 2)))
             existing.daily_return = Decimal(str(round(daily_return, 6)))
@@ -135,6 +175,8 @@ class PerformanceRecorder:
             existing.regime = regime
             existing.num_positions = num_positions
             existing.cash_pct = Decimal(str(round(cash_pct, 4)))
+            if account_id:
+                existing.account_id = account_id
         else:
             metric = PerformanceMetric(
                 date=target_date,
@@ -148,13 +190,23 @@ class PerformanceRecorder:
                 regime=regime,
                 num_positions=num_positions,
                 cash_pct=Decimal(str(round(cash_pct, 4))),
+                asset_class=asset_class,
+                account_id=account_id,
             )
             self._db.add(metric)
 
         self._db.commit()
 
+        self._log.info(
+            'daily_performance_recorded',
+            asset_class=asset_class,
+            portfolio_value=round(portfolio_value, 2),
+            drawdown=round(drawdown, 6),
+        )
+
         return {
             'date': str(target_date),
+            'asset_class': asset_class,
             'portfolio_value': round(portfolio_value, 2),
             'daily_return': round(daily_return, 6),
             'cumulative_return': round(cumulative_return, 6),
@@ -164,8 +216,20 @@ class PerformanceRecorder:
             'num_positions': num_positions,
         }
 
-    def _get_initial_capital(self) -> float:
-        """Read initial capital from config or use default."""
+    def _get_initial_capital(self, asset_class: str = 'etf') -> float:
+        """Read initial capital from Account model, config, or default."""
+        # Try Account model first
+        try:
+            from app.models.account import Account
+            account = Account.query.filter_by(
+                asset_class=asset_class, is_active=True,
+            ).first()
+            if account and account.initial_capital:
+                return float(account.initial_capital)
+        except Exception:
+            pass
+
+        # Fall back to Redis config
         if self._redis:
             raw = self._redis.hget('config:portfolio', 'initial_capital')
             if raw:
@@ -174,6 +238,61 @@ class PerformanceRecorder:
                 except (ValueError, TypeError):
                     pass
         return DEFAULT_INITIAL_CAPITAL
+
+    def _get_account_id(self, asset_class: str) -> int | None:
+        """Get the Account primary key for an asset class."""
+        try:
+            from app.models.account import Account
+            account = Account.query.filter_by(
+                asset_class=asset_class, is_active=True,
+            ).first()
+            return account.id if account else None
+        except Exception:
+            return None
+
+    def _update_account(
+        self,
+        asset_class: str,
+        portfolio_value: float,
+        total_notional: float,
+        total_realized: float,
+        total_unrealized: float,
+        cash: float,
+    ) -> None:
+        """Update Account model with latest EOD metrics."""
+        try:
+            from app.models.account import Account
+            account = Account.query.filter_by(
+                asset_class=asset_class, is_active=True,
+            ).first()
+            if not account:
+                return
+
+            account.portfolio_value = Decimal(str(round(total_notional, 2)))
+            account.cash_balance = Decimal(str(round(cash, 2)))
+            account.realized_pnl = Decimal(str(round(total_realized, 2)))
+            account.unrealized_pnl = Decimal(str(round(total_unrealized, 2)))
+            account.total_pnl = Decimal(str(round(total_realized + total_unrealized, 2)))
+
+            # Update high watermark and drawdown
+            nav = float(account.nav)
+            hwm = float(account.high_watermark or account.initial_capital or DEFAULT_INITIAL_CAPITAL)
+            if nav > hwm:
+                account.high_watermark = Decimal(str(round(nav, 2)))
+                hwm = nav
+            account.current_drawdown = Decimal(str(round(
+                (nav - hwm) / hwm if hwm > 0 else 0.0, 6,
+            )))
+
+            self._db.commit()
+            self._log.info(
+                'account_updated',
+                asset_class=asset_class,
+                nav=round(nav, 2),
+                drawdown=float(account.current_drawdown),
+            )
+        except Exception as exc:
+            self._log.error('account_update_failed', error=str(exc), asset_class=asset_class)
 
     @staticmethod
     def _compute_sharpe(returns: list[float], window: int = 30) -> float | None:
