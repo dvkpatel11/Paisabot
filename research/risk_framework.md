@@ -6,12 +6,18 @@
 |---------|-----------|--------|
 | Portfolio max drawdown | -15% | Halt all trading; alert |
 | Daily loss limit | -3% | Halt for remainder of session |
-| Position stop-loss | -5% from entry | Auto-liquidate position |
-| Position trailing stop | -8% from high-water mark | Auto-liquidate position |
+| Long hard stop | -5% from entry | Auto-liquidate position |
+| Long trailing stop | -8% from high-water mark | Auto-liquidate position |
+| Long soft warning | -3% from entry | Reduce position 50%, monitor |
+| Short hard stop | -4% from entry (tighter) | Auto-liquidate position |
+| Short trailing stop | -6% from low-water mark (tighter) | Auto-liquidate position |
+| Short soft warning | -2.5% from entry (tighter) | Reduce position 50%, monitor |
 | VaR (95%, 1-day) | >2% of portfolio | Reduce position sizes |
 | Average portfolio correlation | >0.85 for 3 days | Force diversification |
 | Vol targeting | 12% annualized | Scale positions down |
 | Liquidity shock | ADV drops >50% | Suspend new entries for affected ETF |
+
+**Why shorts use tighter stops than longs**: upside risk on a short is theoretically unlimited; gap-ups and short squeezes are faster and more violent than sell-offs. We cut losing shorts faster by design. The cash risk per trade remains comparable across books because position sizing is adjusted inversely to stop distance.
 
 ---
 
@@ -68,54 +74,47 @@ class DrawdownMonitor:
 
 ## Stop-Loss Engine
 
+Stop thresholds are direction-aware. Shorts use **tighter** stops than longs.
+
 ```python
-class StopLossEngine:
-    def __init__(self, redis_client):
-        self.redis = redis_client
-
-    def check_position(
-        self,
-        symbol: str,
-        entry_price: float,
-        current_price: float,
-        high_watermark: float,  # highest close since entry
-    ) -> tuple[bool, str]:
-        """
-        Returns (should_exit: bool, reason: str)
-        """
-        stop_loss_pct     = float(self.redis.hget('config:risk', 'position_stop_loss') or -0.05)
-        trailing_stop_pct = float(self.redis.hget('config:risk', 'position_trailing_stop') or -0.08)
-
-        from_entry = (current_price - entry_price) / entry_price
-        from_hwm   = (current_price - high_watermark) / high_watermark
-
-        if from_entry < stop_loss_pct:
-            return True, f'stop_loss ({from_entry:.1%} from entry)'
-
-        if from_hwm < trailing_stop_pct:
-            return True, f'trailing_stop ({from_hwm:.1%} from high watermark of {high_watermark:.2f})'
-
-        return False, 'ok'
-
-    def scan_all_positions(self, positions: list[dict], current_prices: dict) -> list[dict]:
-        """Returns list of positions that should be exited."""
-        exits = []
-        for pos in positions:
-            if not pos['is_open']:
-                continue
-            current = current_prices.get(pos['symbol'])
-            if current is None:
-                continue
-            should_exit, reason = self.check_position(
-                symbol         = pos['symbol'],
-                entry_price    = pos['entry_price'],
-                current_price  = current,
-                high_watermark = pos.get('high_watermark', pos['entry_price']),
-            )
-            if should_exit:
-                exits.append({**pos, 'exit_reason': reason})
-        return exits
+# Default thresholds per direction (all configurable via config:risk Redis hash)
+_DEFAULTS = {
+    'long': {
+        'position_stop_loss':    -0.05,   # -5% from entry
+        'position_trailing_stop': -0.08,  # -8% from high-water mark
+        'position_soft_warn':    -0.03,   # -3% from entry → reduce 50%
+    },
+    'short': {
+        'short_stop_loss':    -0.04,      # -4% from entry (tighter)
+        'short_trailing_stop': -0.06,     # -6% from low-water mark (tighter)
+        'short_soft_warn':    -0.025,     # -2.5% from entry → reduce 50%
+    },
+}
 ```
+
+**Watermark semantics differ by direction**:
+- **Longs**: `high_watermark` = highest close since entry. Trailing stop fires when price
+  retreats more than 8% from that peak.
+- **Shorts**: `high_watermark` column stores the *lowest* close since entry (the best
+  profit point — the "low-water mark"). Trailing stop fires when price rallies more than
+  6% above that trough.  `mark_to_market()` in `PositionTracker` updates this field with
+  `min()` for shorts and `max()` for longs accordingly.
+
+**Directional P&L math** (both sides checked by `StopLossEngine.check_position`):
+```python
+if direction == 'short':
+    from_entry = (entry_price - current_price) / entry_price  # positive = profit
+    from_hwm   = (low_watermark - current_price) / low_watermark  # negative = rally from best
+else:
+    from_entry = (current_price - entry_price) / entry_price
+    from_hwm   = (current_price - high_watermark) / high_watermark
+```
+
+**R-multiple tracking**: the `trades` table records `stop_distance_at_entry` (the fraction
+of entry price to the stop) and `r_multiple` (filled at close: `realized_pnl_pct /
+stop_distance_at_entry`). +1R = closed at exactly the stop loss distance in profit;
+-1R = stopped out. Weekly analytics group R-multiples by signal score bucket to measure
+whether high-conviction signals produce better outcomes than marginal ones.
 
 ---
 
@@ -267,7 +266,13 @@ After a trading halt from drawdown breach:
 4. Admin must manually flip `kill_switch:trading` from `1` → `0` (no auto-resume)
 
 ### 4. Stop-Loss Laddering
-Positions do not use a single fixed stop. The ladder is:
-- Hard stop: -5% from entry → immediate exit
-- Trailing stop: -8% from high-water mark → immediate exit
-- Soft warning: -3% from entry → reduce position by 50%, monitor
+Positions do not use a single fixed stop. Thresholds differ by direction — shorts are
+tighter at every rung because squeeze risk is asymmetric.
+
+| Level | Long | Short |
+|-------|------|-------|
+| Soft warning | -3% from entry → reduce 50% | -2.5% from entry → reduce 50% |
+| Hard stop | -5% from entry → immediate exit | -4% from entry → immediate exit |
+| Trailing stop | -8% from high-water mark → exit | -6% from low-water mark → exit |
+
+All thresholds are admin-configurable via `config:risk` Redis hash keys.

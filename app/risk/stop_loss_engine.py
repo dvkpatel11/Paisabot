@@ -25,8 +25,9 @@ class StopLossEngine:
     # ── thresholds ──────────────────────────────────────────────────
 
     # Default thresholds per direction.
-    # Long positions use tighter stops; short positions use wider stops
-    # to accommodate higher volatility of mean-reversion short trades.
+    # Shorts use TIGHTER stops than longs: upside risk on a short is
+    # theoretically unlimited, gap-ups and squeezes are faster and more
+    # violent than sell-offs, so we cut losing shorts faster by design.
     _DEFAULTS = {
         'long': {
             'position_stop_loss': -0.05,
@@ -34,9 +35,9 @@ class StopLossEngine:
             'position_soft_warn': -0.03,
         },
         'short': {
-            'position_stop_loss': -0.07,
-            'position_trailing_stop': -0.10,
-            'position_soft_warn': -0.04,
+            'position_stop_loss': -0.04,    # tighter than long -5%
+            'position_trailing_stop': -0.06, # tighter than long -8%
+            'position_soft_warn': -0.025,   # tighter than long -3%
         },
     }
 
