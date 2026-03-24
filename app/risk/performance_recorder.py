@@ -300,8 +300,9 @@ class PerformanceRecorder:
         if len(returns) < 5:
             return None
         vals = returns[:window]
-        mean_ret = sum(vals) / len(vals)
-        variance = sum((r - mean_ret) ** 2 for r in vals) / len(vals)
+        n = len(vals)
+        mean_ret = sum(vals) / n
+        variance = sum((r - mean_ret) ** 2 for r in vals) / (n - 1)  # sample variance
         std_ret = math.sqrt(variance)
         if std_ret < 1e-10:
             return None
@@ -313,8 +314,9 @@ class PerformanceRecorder:
         if len(returns) < 5:
             return None
         vals = returns[:window]
-        mean_ret = sum(vals) / len(vals)
-        variance = sum((r - mean_ret) ** 2 for r in vals) / len(vals)
+        n = len(vals)
+        mean_ret = sum(vals) / n
+        variance = sum((r - mean_ret) ** 2 for r in vals) / (n - 1)  # sample variance
         return math.sqrt(variance) * math.sqrt(252)
 
     @staticmethod
@@ -325,8 +327,9 @@ class PerformanceRecorder:
         """Parametric VaR at 95% confidence level."""
         if len(returns) < 5:
             return None
-        mean_ret = sum(returns) / len(returns)
-        variance = sum((r - mean_ret) ** 2 for r in returns) / len(returns)
+        n = len(returns)
+        mean_ret = sum(returns) / n
+        variance = sum((r - mean_ret) ** 2 for r in returns) / (n - 1)  # sample variance
         std_ret = math.sqrt(variance)
         # 95% VaR: negative value representing loss
         return -1.645 * std_ret * portfolio_value

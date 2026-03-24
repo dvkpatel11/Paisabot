@@ -126,3 +126,29 @@ class TestPerformanceRecorder:
 
         # Only 1 data point (today's)
         assert result['sharpe_30d'] is None
+
+    def test_compute_sharpe_uses_sample_variance(self):
+        """Sharpe denominator must use n-1 (sample std), not n (population std)."""
+        import math
+        returns = [0.01, -0.005, 0.02, -0.01, 0.015, 0.0]  # 6 observations
+        n = len(returns)
+        mean = sum(returns) / n
+        sample_std = math.sqrt(sum((r - mean) ** 2 for r in returns) / (n - 1))
+        expected_sharpe = (mean / sample_std) * math.sqrt(252)
+
+        result = PerformanceRecorder._compute_sharpe(returns)
+        assert result is not None
+        assert abs(result - expected_sharpe) < 1e-9
+
+    def test_compute_vol_uses_sample_variance(self):
+        """Volatility must use sample std (n-1), not population std (n)."""
+        import math
+        returns = [0.01, -0.005, 0.02, -0.01, 0.015, 0.0]
+        n = len(returns)
+        mean = sum(returns) / n
+        sample_std = math.sqrt(sum((r - mean) ** 2 for r in returns) / (n - 1))
+        expected_vol = sample_std * math.sqrt(252)
+
+        result = PerformanceRecorder._compute_vol(returns)
+        assert result is not None
+        assert abs(result - expected_vol) < 1e-9

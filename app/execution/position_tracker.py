@@ -298,9 +298,12 @@ class PositionTracker:
             existing.notional = Decimal(str(round(
                 fill_price * remaining_qty, 2,
             )))
-            existing.unrealized_pnl = Decimal(str(round(
-                (fill_price - entry_price) * remaining_qty, 2,
-            )))
+            # PnL direction matches position side: shorts profit when price falls
+            if direction == 'short':
+                remaining_upnl = (entry_price - fill_price) * remaining_qty
+            else:
+                remaining_upnl = (fill_price - entry_price) * remaining_qty
+            existing.unrealized_pnl = Decimal(str(round(remaining_upnl, 2)))
             self._log.info(
                 'position_reduced',
                 symbol=symbol,
