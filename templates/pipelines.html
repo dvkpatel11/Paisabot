@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+{% block title %}Pipelines - Paisabot{% endblock %}
+
+{% block content %}
+<div class="page-header" style="display:flex;align-items:center;justify-content:space-between">
+  <h1>Realtime Pipelines</h1>
+  <span class="text-muted" id="pipeline-last-update" style="font-family:var(--font-mono);font-size:12px">Last update: --</span>
+</div>
+
+<!-- Data Management -->
+<div class="panel panel-full" style="margin-bottom:16px">
+  <div class="panel-header">
+    <h2>Data Management</h2>
+    <span class="text-muted" style="font-size:12px" id="data-status-label"></span>
+  </div>
+  <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;padding:0 0 12px 0">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn" id="btn-backfill" onclick="triggerBackfill(false)">Run Backfill (Celery)</button>
+      <button class="btn" id="btn-backfill-sync" onclick="triggerBackfill(true)">Run Backfill (Sync)</button>
+      <button class="btn" id="btn-pipeline" onclick="triggerPipeline()" style="background:var(--green);color:#000">Run Pipeline</button>
+      <button class="btn" id="btn-ws-toggle" onclick="toggleWebSocket()">Start WebSocket</button>
+      <span class="text-muted" id="data-action-status" style="font-size:12px"></span>
+    </div>
+  </div>
+  <div id="data-status-table"></div>
+</div>
+
+<!-- Pipeline Flow -->
+<div class="panel panel-full" style="margin-bottom:16px">
+  <div class="panel-header">
+    <h2>Pipeline Flow</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span class="badge" id="pipeline-mode">--</span>
+      <span class="text-muted" style="font-size:12px" id="pipeline-mode-label"></span>
+    </div>
+  </div>
+  <div id="pipeline-flow" class="pipeline-flow"></div>
+</div>
+
+<!-- Module Metrics Grid -->
+<div class="grid grid-3" id="metrics-grid" style="margin-bottom:16px">
+  <div class="panel" id="metric-market_data">
+    <div class="panel-header"><h2>Data Ingestion</h2><span class="health-dot" id="dot-market_data">D</span></div>
+    <div class="metric-rows">
+      <div class="metric-row"><span class="metric-label">Items Processed</span><span class="metric-val" id="val-market_data-items">0</span></div>
+      <div class="metric-row"><span class="metric-label">Compute Time</span><span class="metric-val" id="val-market_data-time">-- ms</span></div>
+      <div class="metric-row"><span class="metric-label">Status</span><span class="metric-val" id="val-market_data-status">idle</span></div>
+      <div class="metric-row"><span class="metric-label">Last Activity</span><span class="metric-val" id="val-market_data-last">--</span></div>
+    </div>
+  </div>
+  <div class="panel" id="metric-factor_engine">
+    <div class="panel-header"><h2>Factor Engine</h2><span class="health-dot" id="dot-factor_engine">F</span></div>
+    <div class="metric-rows">
+      <div class="metric-row"><span class="metric-label">Symbols Computed</span><span class="metric-val" id="val-factor_engine-items">0</span></div>
+      <div class="metric-row"><span class="metric-label">Compute Time</span><span class="metric-val" id="val-factor_engine-time">-- ms</span></div>
+      <div class="metric-row"><span class="metric-label">Status</span><span class="metric-val" id="val-factor_engine-status">idle</span></div>
+      <div class="metric-row"><span class="metric-label">Last Activity</span><span class="metric-val" id="val-factor_engine-last">--</span></div>
+    </div>
+  </div>
+  <div class="panel" id="metric-signal_engine">
+    <div class="panel-header"><h2>Signal Engine</h2><span class="health-dot" id="dot-signal_engine">S</span></div>
+    <div class="metric-rows">
+      <div class="metric-row"><span class="metric-label">Signals Generated</span><span class="metric-val" id="val-signal_engine-items">0</span></div>
+      <div class="metric-row"><span class="metric-label">Cycle Time</span><span class="metric-val" id="val-signal_engine-time">-- ms</span></div>
+      <div class="metric-row"><span class="metric-label">Status</span><span class="metric-val" id="val-signal_engine-status">idle</span></div>
+      <div class="metric-row"><span class="metric-label">Last Activity</span><span class="metric-val" id="val-signal_engine-last">--</span></div>
+    </div>
+  </div>
+  <div class="panel" id="metric-portfolio_engine">
+    <div class="panel-header"><h2>Portfolio Build</h2><span class="health-dot" id="dot-portfolio_engine">P</span></div>
+    <div class="metric-rows">
+      <div class="metric-row"><span class="metric-label">Portfolios Built</span><span class="metric-val" id="val-portfolio_engine-items">0</span></div>
+      <div class="metric-row"><span class="metric-label">Build Time</span><span class="metric-val" id="val-portfolio_engine-time">-- ms</span></div>
+      <div class="metric-row"><span class="metric-label">Queue Depth</span><span class="metric-val" id="val-portfolio_engine-queue">0</span></div>
+      <div class="metric-row"><span class="metric-label">Last Activity</span><span class="metric-val" id="val-portfolio_engine-last">--</span></div>
+    </div>
+  </div>
+  <div class="panel" id="metric-risk_engine">
+    <div class="panel-header"><h2>Risk Gating</h2><span class="health-dot" id="dot-risk_engine">R</span></div>
+    <div class="metric-rows">
+      <div class="metric-row"><span class="metric-label">Orders Reviewed</span><span class="metric-val" id="val-risk_engine-items">0</span></div>
+      <div class="metric-row"><span class="metric-label">Latency</span><span class="metric-val" id="val-risk_engine-time">-- ms</span></div>
+      <div class="metric-row"><span class="metric-label">Queue Depth</span><span class="metric-val" id="val-risk_engine-queue">0</span></div>
+      <div class="metric-row"><span class="metric-label">Last Activity</span><span class="metric-val" id="val-risk_engine-last">--</span></div>
+    </div>
+  </div>
+  <div class="panel" id="metric-execution_engine">
+    <div class="panel-header"><h2>Execution</h2><span class="health-dot" id="dot-execution_engine">E</span></div>
+    <div class="metric-rows">
+      <div class="metric-row"><span class="metric-label">Orders Filled</span><span class="metric-val" id="val-execution_engine-items">0</span></div>
+      <div class="metric-row"><span class="metric-label">Avg Slippage</span><span class="metric-val" id="val-execution_engine-time">-- bps</span></div>
+      <div class="metric-row"><span class="metric-label">Status</span><span class="metric-val" id="val-execution_engine-status">idle</span></div>
+      <div class="metric-row"><span class="metric-label">Last Fill</span><span class="metric-val" id="val-execution_engine-last">--</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- Throughput Chart -->
+<div class="panel panel-full" style="margin-bottom:16px">
+  <div class="panel-header">
+    <h2>Pipeline Throughput (Last 60 min)</h2>
+  </div>
+  <div id="throughput-chart" style="height:280px"></div>
+</div>
+
+<!-- Kill Switch Summary -->
+<div class="panel panel-full" style="margin-bottom:16px">
+  <div class="panel-header">
+    <h2>Kill Switches</h2>
+  </div>
+  <div class="switch-grid" id="kill-switch-grid"></div>
+</div>
+
+<!-- Event Feed -->
+<div class="panel panel-full">
+  <div class="panel-header">
+    <h2>Pipeline Events</h2>
+    <span class="badge" id="event-total">0</span>
+  </div>
+  <div id="events-table"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/pipelines.js') }}"></script>
+<script>
+function triggerBackfill(sync) {
+  const btnId = sync ? 'btn-backfill-sync' : 'btn-backfill';
+  const btn = document.getElementById(btnId);
+  const status = document.getElementById('data-action-status');
+  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.textContent = sync ? 'Loading data...' : 'Dispatching...';
+  status.textContent = sync ? 'Fetching bars from Alpaca (this may take a minute)...' : 'Dispatching backfill tasks...';
+
+  fetch('/api/data/backfill', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sync: !!sync}),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        status.textContent = 'Error: ' + data.error;
+      } else if (data.mode === 'sync') {
+        const ok = (data.results || []).filter(r => r.status === 'ok').length;
+        const total = (data.results || []).reduce((s, r) => s + (r.inserted || 0), 0);
+        status.textContent = 'Backfill complete: ' + ok + '/' + data.count + ' symbols, ' + total + ' bars inserted';
+        if (data.errors && data.errors.length > 0) {
+          status.textContent += ' (' + data.errors.length + ' errors)';
+        }
+      } else {
+        status.textContent = 'Backfill dispatched for ' + data.count + ' symbols (' + data.days + ' days)';
+      }
+      btn.disabled = false;
+      btn.textContent = origText;
+      loadDataStatus();
+    })
+    .catch(() => {
+      status.textContent = sync ? 'Backfill failed — check Alpaca keys in .env' : 'Backfill failed — check Celery worker is running';
+      btn.disabled = false;
+      btn.textContent = origText;
+    });
+}
+
+// Data table columns — defined once, created on init
+var _dataStatusCols = [
+  {title: 'Symbol', field: 'symbol', width: 80},
+  {title: 'Bars', field: 'count', width: 70, hozAlign: 'right'},
+  {title: 'Earliest', field: 'earliest', formatter: PaisaTables.timeFormatter},
+  {title: 'Latest', field: 'latest', formatter: PaisaTables.timeFormatter},
+];
+
+function initDataTable() {
+  PaisaTables.create('data-status-table', _dataStatusCols, {maxHeight: 300});
+}
+
+function loadDataStatus() {
+  fetch('/api/data/status').then(r => r.json()).then(data => {
+    document.getElementById('data-status-label').textContent =
+      data.bars_total_symbols + '/' + data.universe_count + ' symbols with data' +
+      (data.factor_scores_latest ? ' | Factors: ' + PaisaUtils.formatTime(data.factor_scores_latest) : ' | No factors computed');
+
+    const rows = Object.entries(data.bars).map(([sym, info]) => ({
+      symbol: sym, count: info.count,
+      earliest: info.earliest, latest: info.latest,
+    })).sort((a, b) => a.symbol.localeCompare(b.symbol));
+
+    PaisaTables.setData('data-status-table', rows);
+  });
+}
+
+function triggerPipeline() {
+  const btn = document.getElementById('btn-pipeline');
+  const status = document.getElementById('data-action-status');
+  btn.disabled = true;
+  btn.textContent = 'Running pipeline...';
+  status.textContent = 'Executing: signals → portfolio → risk → execution...';
+
+  fetch('/api/pipeline/run', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sync: true}),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        status.textContent = 'Pipeline error: ' + data.error;
+      } else if (data.reason) {
+        var hints = {
+          'no_signals': 'No signals found. Run Compute Factors on the Factors page first, then retry.',
+          'no_price_data': 'No price data available. Run Backfill first to load historical bars.',
+          'no_orders': 'Signals generated (' + (data.n_signals||0) + ') but no rebalance orders needed (regime: ' + (data.regime||'?') + ').',
+          'all_blocked': (data.n_orders||0) + ' orders proposed but all blocked by risk gate (' + (data.n_blocked||0) + ' blocked).',
+        };
+        status.textContent = hints[data.reason] || ('Pipeline stopped at ' + (data.stage || '?') + ': ' + data.reason);
+      } else {
+        const parts = [];
+        if (data.n_signals) parts.push(data.n_signals + ' signals');
+        if (data.n_orders) parts.push(data.n_orders + ' orders');
+        if (data.n_approved) parts.push(data.n_approved + ' approved');
+        if (data.n_filled) parts.push(data.n_filled + ' filled');
+        if (data.n_blocked) parts.push(data.n_blocked + ' blocked');
+        status.textContent = 'Pipeline complete: ' + parts.join(', ') + ' | Regime: ' + (data.regime || '?');
+      }
+      btn.disabled = false;
+      btn.textContent = 'Run Pipeline';
+    })
+    .catch(() => {
+      status.textContent = 'Pipeline failed — check server logs';
+      btn.disabled = false;
+      btn.textContent = 'Run Pipeline';
+    });
+}
+
+function toggleWebSocket() {
+  const btn = document.getElementById('btn-ws-toggle');
+  const status = document.getElementById('data-action-status');
+
+  fetch('/api/data/websocket/status').then(r => r.json()).then(data => {
+    if (data.running) {
+      btn.disabled = true;
+      fetch('/api/data/websocket/stop', {method: 'POST'})
+        .then(r => r.json())
+        .then(() => {
+          btn.textContent = 'Start WebSocket';
+          btn.disabled = false;
+          status.textContent = 'WebSocket stopped';
+        });
+    } else {
+      btn.disabled = true;
+      btn.textContent = 'Connecting...';
+      fetch('/api/data/websocket/start', {method: 'POST'})
+        .then(r => r.json())
+        .then(d => {
+          if (d.error) {
+            status.textContent = 'WebSocket error: ' + d.error;
+            btn.textContent = 'Start WebSocket';
+          } else {
+            btn.textContent = 'Stop WebSocket';
+            status.textContent = 'WebSocket streaming ' + (d.symbols || 0) + ' symbols';
+          }
+          btn.disabled = false;
+        });
+    }
+  });
+}
+
+function checkWsStatus() {
+  fetch('/api/data/websocket/status').then(r => r.json()).then(data => {
+    if (data.running) {
+      document.getElementById('btn-ws-toggle').textContent = 'Stop WebSocket';
+    }
+  }).catch(() => {});
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  initDataTable();
+  loadDataStatus();
+  checkWsStatus();
+});
+</script>
+{% endblock %}
