@@ -98,7 +98,28 @@
 
   /* ── Sidebar ──────────────────────────────────────────────────────── */
   --sidebar-width: 200px;
-  --topbar-height: 52px;
+  --topbar-height: 48px;
+  --statusbar-height: 28px;
+
+  /* ── Bloomberg density ──────────────────────────────────────────── */
+  --row-height: 28px;          /* compact table rows                 */
+  --row-height-lg: 36px;       /* slightly roomier variant           */
+  --cell-pad-x: 8px;
+  --cell-pad-y: 4px;
+  --panel-pad: 12px;           /* tighter panel body padding         */
+  --tab-height: 36px;          /* page-tabs height                   */
+
+  /* ── Cell flash (live tick highlight) ───────────────────────────── */
+  --flash-up:   rgba(0,200,122,0.25);
+  --flash-down: rgba(232,45,107,0.25);
+
+  /* ── Z-index layers ─────────────────────────────────────────────── */
+  --z-statusbar: 100;
+  --z-sidebar: 150;
+  --z-topbar: 200;
+  --z-alert-panel: 300;
+  --z-command: 500;
+  --z-kill: 9999;
 }
 
 /* ── Base reset ───────────────────────────────────────────────────────── */

@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Stock Screener - Paisabot{% endblock %}
+
+{% block content %}
+<div class="page-tabs" x-data="{ tab: 'all' }">
+  <div class="page-tab-bar">
+    <button class="page-tab" :class="{ active: tab==='all' }"           @click="tab='all'">ALL STOCKS</button>
+    <button class="page-tab" :class="{ active: tab==='fundamentals' }"  @click="tab='fundamentals'">FUNDAMENTALS</button>
+    <button class="page-tab" :class="{ active: tab==='momentum' }"     @click="tab='momentum'">MOMENTUM</button>
+    <button class="page-tab" :class="{ active: tab==='quality' }"      @click="tab='quality'">QUALITY</button>
+    <button class="page-tab" :class="{ active: tab==='custom' }"       @click="tab='custom'">CUSTOM FILTER</button>
+  </div>
+
+  <!-- ALL STOCKS -->
+  <div class="page-tab-panel" x-show="tab==='all'">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title"><i class="fa-solid fa-filter"></i> Stock Screener</h1>
+        <p class="page-subtitle">Full equity universe with factor scores and fundamentals</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-outline btn-sm" id="btn-refresh-stocks">
+          <i class="fa-solid fa-arrows-rotate"></i> Refresh
+        </button>
+      </div>
+    </div>
+
+    <!-- Summary stats -->
+    <div class="grid grid-5" style="margin-top:var(--space-4)">
+      <div class="stat-tile">
+        <span class="stat-label">Universe</span>
+        <span class="stat-value mono" id="stock-count">--</span>
+        <span class="stat-sub">active stocks</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-label">Avg Score</span>
+        <span class="stat-value mono" id="avg-score">--</span>
+        <span class="stat-sub">composite</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-label">Top Signal</span>
+        <span class="stat-value mono" id="top-signal">--</span>
+        <span class="stat-sub" id="top-signal-name">--</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-label">Bullish</span>
+        <span class="stat-value mono pos" id="bullish-count">--</span>
+        <span class="stat-sub">score &gt; 0.65</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-label">Bearish</span>
+        <span class="stat-value mono neg" id="bearish-count">--</span>
+        <span class="stat-sub">score &lt; 0.35</span>
+      </div>
+    </div>
+
+    <!-- Screener table -->
+    <div class="panel" style="margin-top:var(--space-4)">
+      <div id="stock-screener-table" style="min-height:400px"></div>
+    </div>
+  </div>
+
+  <!-- FUNDAMENTALS -->
+  <div class="page-tab-panel" x-show="tab==='fundamentals'">
+    <div class="page-header">
+      <h1 class="page-title"><i class="fa-solid fa-building-columns"></i> Fundamentals Screener</h1>
+    </div>
+    <div class="panel" style="margin-top:var(--space-4)">
+      <div class="panel-header">
+        <span class="panel-title">Fundamental Metrics</span>
+        <div style="display:flex;gap:var(--space-2)">
+          <select class="select" id="fund-sector-filter">
+            <option value="">All Sectors</option>
+          </select>
+        </div>
+      </div>
+      <div id="fundamentals-table" style="min-height:400px"></div>
+    </div>
+  </div>
+
+  <!-- MOMENTUM -->
+  <div class="page-tab-panel" x-show="tab==='momentum'">
+    <div class="page-header">
+      <h1 class="page-title"><i class="fa-solid fa-arrow-trend-up"></i> Momentum Rankings</h1>
+    </div>
+    <div class="grid grid-2" style="margin-top:var(--space-4)">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Top Momentum</span></div>
+        <div id="momentum-top-table" style="min-height:300px"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Momentum Losers</span></div>
+        <div id="momentum-bottom-table" style="min-height:300px"></div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:var(--space-4)">
+      <div class="panel-header"><span class="panel-title">Momentum Heatmap</span></div>
+      <div id="momentum-heatmap" style="height:400px"></div>
+    </div>
+  </div>
+
+  <!-- QUALITY -->
+  <div class="page-tab-panel" x-show="tab==='quality'">
+    <div class="page-header">
+      <h1 class="page-title"><i class="fa-solid fa-gem"></i> Quality Metrics</h1>
+    </div>
+    <div class="panel" style="margin-top:var(--space-4)">
+      <div class="panel-header"><span class="panel-title">Quality Scores</span></div>
+      <div id="quality-table" style="min-height:400px"></div>
+    </div>
+  </div>
+
+  <!-- CUSTOM FILTER -->
+  <div class="page-tab-panel" x-show="tab==='custom'">
+    <div class="page-header">
+      <h1 class="page-title"><i class="fa-solid fa-sliders"></i> Custom Filter</h1>
+      <p class="page-subtitle">Build a multi-field filter to narrow down the stock universe</p>
+    </div>
+    <div class="panel" style="margin-top:var(--space-4)">
+      <div class="panel-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Min Market Cap ($M)</label>
+            <input type="number" class="input" id="filter-min-mcap" value="1000">
+          </div>
+          <div class="form-group">
+            <label>Max P/E</label>
+            <input type="number" class="input" id="filter-max-pe" value="50">
+          </div>
+          <div class="form-group">
+            <label>Min Score</label>
+            <input type="number" class="input" id="filter-min-score" value="0.5" step="0.05">
+          </div>
+          <div class="form-group">
+            <label>Sector</label>
+            <select class="select" id="filter-sector">
+              <option value="">All Sectors</option>
+            </select>
+          </div>
+        </div>
+        <div style="margin-top:var(--space-4)">
+          <button class="btn btn-primary" id="btn-apply-filter"><i class="fa-solid fa-play"></i> Apply Filter</button>
+          <button class="btn btn-ghost" id="btn-reset-filter"><i class="fa-solid fa-rotate-left"></i> Reset</button>
+        </div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:var(--space-4)">
+      <div id="custom-filter-table" style="min-height:400px"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/pages/stock_screener.js') }}"></script>
+{% endblock %}

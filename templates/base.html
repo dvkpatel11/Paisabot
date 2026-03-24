@@ -14,32 +14,24 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" />
 
   <!-- ── Charting ──────────────────────────────────────────────────────── -->
-  <!-- Lightweight Charts (TradingView) — candlesticks, sparklines, area -->
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
-  <!-- Plotly.js — heatmaps, correlation matrices, factor radar, PnL curves -->
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
-  <!-- Chart.js — simple bar / doughnut / mini charts -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 
   <!-- ── Tables ────────────────────────────────────────────────────────── -->
-  <!-- Tabulator — sortable / filterable real-time data tables -->
   <link href="https://unpkg.com/tabulator-tables@6.2.1/dist/css/tabulator_midnight.min.css" rel="stylesheet" />
   <script src="https://unpkg.com/tabulator-tables@6.2.1/dist/js/tabulator.min.js"></script>
 
   <!-- ── Reactivity ────────────────────────────────────────────────────── -->
-  <!-- Alpine.js — lightweight reactive bindings (no build step) -->
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js"></script>
 
   <!-- ── Real-time ─────────────────────────────────────────────────────── -->
-  <!-- Socket.IO client — Flask-SocketIO bridge -->
   <script src="https://cdn.socket.io/4.7.4/socket.io.min.js" crossorigin="anonymous"></script>
 
   <!-- ── Number formatting ─────────────────────────────────────────────── -->
-  <!-- Numeral.js — currency, bps, pct formatting -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/numeral.js/2.0.6/numeral.min.js"></script>
 
   <!-- ── Date/time ─────────────────────────────────────────────────────── -->
-  <!-- Day.js — lightweight date parsing / display -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dayjs/1.11.10/dayjs.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dayjs/1.11.10/plugin/relativeTime.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dayjs/1.11.10/plugin/utc.min.js"></script>
@@ -57,9 +49,10 @@
   {% block extra_css %}{% endblock %}
 </head>
 
-<body x-data x-init="$store.app.init()" class="app-body">
+<body x-data="{ commandOpen: false }" x-init="$store.app.init()" class="app-body"
+      @keydown.window="if ((e=$event).key==='k' && (e.metaKey||e.ctrlKey)) { e.preventDefault(); commandOpen=!commandOpen; }">
 
-  <!-- ── Kill-switch banner (shown when kill switch is active) ─────────── -->
+  <!-- ── Kill-switch banner ──────────────────────────────────────────── -->
   <div id="kill-banner"
        class="kill-banner"
        x-data
@@ -68,14 +61,14 @@
        style="display:none">
     <i class="fa-solid fa-circle-exclamation"></i>
     <span x-text="$store.app.killSwitchMsg">TRADING HALTED</span>
-    <a href="/config#kill-switches" class="kill-banner-link">Manage →</a>
+    <a href="/config#kill-switches" class="kill-banner-link">Manage &rarr;</a>
   </div>
 
-  <!-- ── Top nav bar ───────────────────────────────────────────────────── -->
+  <!-- ── Top nav bar ─────────────────────────────────────────────────── -->
   <header class="topbar">
     <div class="topbar-left">
       <a href="/" class="brand">
-        <span class="brand-icon">₿</span>
+        <span class="brand-icon">&#8383;</span>
         <span class="brand-name">Paisabot</span>
       </a>
 
@@ -87,6 +80,13 @@
     </div>
 
     <div class="topbar-center">
+      <!-- Command palette trigger -->
+      <button class="btn btn-ghost btn-sm" @click="commandOpen=true"
+              style="gap:var(--space-3);font-family:var(--font-mono);font-size:var(--text-xs);color:var(--text-muted);border:1px solid var(--bg-border);min-width:200px;justify-content:space-between">
+        <span><i class="fa-solid fa-magnifying-glass" style="margin-right:6px"></i>Search&hellip;</span>
+        <span style="font-size:10px;opacity:.5">Ctrl+K</span>
+      </button>
+
       <!-- Live regime pill -->
       <div class="regime-pill" x-data :class="'regime-' + $store.app.regime">
         <span class="regime-dot"></span>
@@ -102,7 +102,7 @@
     </div>
 
     <div class="topbar-right">
-      <!-- System health micro-indicators (D F S P R E M) -->
+      <!-- System health micro-indicators -->
       <div class="health-strip" x-data>
         <template x-for="(status, key) in $store.app.health" :key="key">
           <div class="health-dot"
@@ -126,48 +126,102 @@
     </div>
   </header>
 
-  <!-- ── Main layout: sidebar + content ────────────────────────────────── -->
+  <!-- ── Main layout: sidebar + content ──────────────────────────────── -->
   <div class="app-shell">
 
-    <!-- Side nav -->
+    <!-- Side nav — 4 sections -->
     <nav class="sidebar" id="sidebar">
-      <div class="nav-section-label">TRADING</div>
-      <a href="/dashboard"  class="nav-item {% if request.endpoint == 'views.dashboard'  %}active{% endif %}">
-        <i class="fa-solid fa-chart-line"></i><span>Dashboard</span>
-        <span class="nav-badge" id="nav-pnl"></span>
-      </a>
-      <a href="/factors"    class="nav-item {% if request.endpoint == 'views.factors'    %}active{% endif %}">
-        <i class="fa-solid fa-layer-group"></i><span>Factors</span>
-      </a>
-      <a href="/rotation"   class="nav-item {% if request.endpoint == 'views.rotation'   %}active{% endif %}">
-        <i class="fa-solid fa-rotate"></i><span>Rotation</span>
-      </a>
-      <a href="/execution"  class="nav-item {% if request.endpoint == 'views.execution'  %}active{% endif %}">
-        <i class="fa-solid fa-bolt"></i><span>Execution</span>
-      </a>
 
-      <div class="nav-section-label">ANALYSIS</div>
-      <a href="/analytics"  class="nav-item {% if request.endpoint in ('views.analytics', 'views.portfolio') %}active{% endif %}">
-        <i class="fa-solid fa-chart-bar"></i><span>Analytics</span>
-      </a>
-      <a href="/backtest"   class="nav-item {% if request.endpoint == 'views.backtest'   %}active{% endif %}">
-        <i class="fa-solid fa-flask-vial"></i><span>Backtest</span>
-      </a>
-      <a href="/market"     class="nav-item {% if request.endpoint in ('views.market', 'views.bulletin') %}active{% endif %}">
-        <i class="fa-solid fa-newspaper"></i><span>Market</span>
-      </a>
+      <!-- ─── ETF STRATEGIES ─────────────────────────────────────── -->
+      <div class="nav-section" x-data="{ open: true }">
+        <div class="nav-section-label" @click="open = !open">
+          ETF STRATEGIES
+          <i class="fa-solid fa-chevron-down chevron" :style="!open && 'transform:rotate(-90deg)'"></i>
+        </div>
+        <div class="nav-section-items" x-show="open" x-collapse>
+          <a href="/dashboard"  class="nav-item {% if request.endpoint == 'views.dashboard'  %}active{% endif %}">
+            <i class="fa-solid fa-chart-line"></i><span>Dashboard</span>
+            <span class="nav-badge" id="nav-pnl"></span>
+          </a>
+          <a href="/factors"    class="nav-item {% if request.endpoint == 'views.factors'    %}active{% endif %}">
+            <i class="fa-solid fa-layer-group"></i><span>Factors</span>
+          </a>
+          <a href="/rotation"   class="nav-item {% if request.endpoint == 'views.rotation'   %}active{% endif %}">
+            <i class="fa-solid fa-rotate"></i><span>Rotation</span>
+          </a>
+          <a href="/execution"  class="nav-item {% if request.endpoint == 'views.execution'  %}active{% endif %}">
+            <i class="fa-solid fa-bolt"></i><span>Execution</span>
+          </a>
+          <a href="/portfolio"  class="nav-item {% if request.endpoint in ('views.analytics', 'views.portfolio') %}active{% endif %}">
+            <i class="fa-solid fa-chart-pie"></i><span>Portfolio</span>
+          </a>
+          <a href="/backtest"   class="nav-item {% if request.endpoint == 'views.backtest'   %}active{% endif %}">
+            <i class="fa-solid fa-flask-vial"></i><span>Backtest</span>
+          </a>
+        </div>
+      </div>
 
-      <div class="nav-section-label">SYSTEM</div>
-      <a href="/alerts"     class="nav-item {% if request.endpoint == 'views.alerts'     %}active{% endif %}">
-        <i class="fa-solid fa-triangle-exclamation"></i><span>Alerts</span>
-        <span class="nav-badge danger" x-data x-show="$store.alerts.unread > 0" x-text="$store.alerts.unread"></span>
-      </a>
-      <a href="/pipelines"  class="nav-item {% if request.endpoint == 'views.pipelines'  %}active{% endif %}">
-        <i class="fa-solid fa-network-wired"></i><span>Pipeline</span>
-      </a>
-      <a href="/config"     class="nav-item {% if request.endpoint == 'views.config'     %}active{% endif %}">
-        <i class="fa-solid fa-gear"></i><span>Config</span>
-      </a>
+      <!-- ─── EQUITY RESEARCH ────────────────────────────────────── -->
+      <div class="nav-section" x-data="{ open: true }">
+        <div class="nav-section-label" @click="open = !open">
+          EQUITY RESEARCH
+          <i class="fa-solid fa-chevron-down chevron" :style="!open && 'transform:rotate(-90deg)'"></i>
+        </div>
+        <div class="nav-section-items" x-show="open" x-collapse>
+          <a href="/stocks"             class="nav-item {% if request.endpoint == 'views.stock_screener' %}active{% endif %}">
+            <i class="fa-solid fa-filter"></i><span>Screener</span>
+          </a>
+          <a href="/stocks/securities"  class="nav-item {% if request.endpoint == 'views.stock_security' %}active{% endif %}">
+            <i class="fa-solid fa-chart-candlestick"></i><span>Securities</span>
+          </a>
+          <a href="/stocks/factors"     class="nav-item {% if request.endpoint == 'views.stock_factors' %}active{% endif %}">
+            <i class="fa-solid fa-square-poll-vertical"></i><span>Factors</span>
+          </a>
+          <a href="/stocks/backtest"    class="nav-item {% if request.endpoint == 'views.stock_backtest' %}active{% endif %}">
+            <i class="fa-solid fa-vial"></i><span>Backtest</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- ─── MARKET INTELLIGENCE ────────────────────────────────── -->
+      <div class="nav-section" x-data="{ open: true }">
+        <div class="nav-section-label" @click="open = !open">
+          MARKET INTELLIGENCE
+          <i class="fa-solid fa-chevron-down chevron" :style="!open && 'transform:rotate(-90deg)'"></i>
+        </div>
+        <div class="nav-section-items" x-show="open" x-collapse>
+          <a href="/intel/news"  class="nav-item {% if request.endpoint == 'views.intel_news' %}active{% endif %}">
+            <i class="fa-solid fa-newspaper"></i><span>News &amp; Sentiment</span>
+          </a>
+          <a href="/intel/data"  class="nav-item {% if request.endpoint == 'views.intel_data' %}active{% endif %}">
+            <i class="fa-solid fa-database"></i><span>Data Center</span>
+          </a>
+          <a href="/intel/macro" class="nav-item {% if request.endpoint == 'views.intel_macro' %}active{% endif %}">
+            <i class="fa-solid fa-globe"></i><span>Macro Calendar</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- ─── SYSTEM ─────────────────────────────────────────────── -->
+      <div class="nav-section" x-data="{ open: true }">
+        <div class="nav-section-label" @click="open = !open">
+          SYSTEM
+          <i class="fa-solid fa-chevron-down chevron" :style="!open && 'transform:rotate(-90deg)'"></i>
+        </div>
+        <div class="nav-section-items" x-show="open" x-collapse>
+          <a href="/pipelines"  class="nav-item {% if request.endpoint == 'views.pipelines'  %}active{% endif %}">
+            <i class="fa-solid fa-network-wired"></i><span>Pipelines</span>
+          </a>
+          <a href="/alerts"     class="nav-item {% if request.endpoint == 'views.alerts'     %}active{% endif %}">
+            <i class="fa-solid fa-triangle-exclamation"></i><span>Alerts</span>
+            <span class="nav-badge danger" x-data x-show="$store.alerts.unread > 0" x-text="$store.alerts.unread"></span>
+          </a>
+          <a href="/config"     class="nav-item {% if request.endpoint == 'views.config'     %}active{% endif %}">
+            <i class="fa-solid fa-gear"></i><span>Config</span>
+          </a>
+        </div>
+      </div>
+
     </nav>
 
     <!-- Page content area -->
@@ -177,7 +231,7 @@
 
   </div><!-- /.app-shell -->
 
-  <!-- ── Alert slide-over panel ────────────────────────────────────────── -->
+  <!-- ── Alert slide-over panel ──────────────────────────────────────── -->
   <div class="alert-panel" id="alert-panel" x-data x-show="$store.alerts.panelOpen" x-transition style="display:none">
     <div class="alert-panel-header">
       <span>Risk Alerts</span>
@@ -195,12 +249,139 @@
     </div>
   </div>
 
-  <!-- ── Core app JS ────────────────────────────────────────────────────── -->
+  <!-- ── Command palette (Ctrl+K) ────────────────────────────────────── -->
+  <div class="command-overlay"
+       x-show="commandOpen"
+       x-transition.opacity
+       @click.self="commandOpen=false"
+       @keydown.escape.window="commandOpen=false"
+       style="display:none"
+       x-data="commandPalette()">
+    <div class="command-box" @click.stop>
+      <div class="command-input-wrap">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <input class="command-input"
+               type="text"
+               placeholder="Search pages, symbols, actions..."
+               x-ref="cmdInput"
+               x-model="query"
+               @input="filter()"
+               @keydown.arrow-down.prevent="moveDown()"
+               @keydown.arrow-up.prevent="moveUp()"
+               @keydown.enter.prevent="go()"
+               x-init="$watch('$root.__x_is_shown', v => v && $nextTick(() => $refs.cmdInput.focus()))">
+      </div>
+      <div class="command-results">
+        <template x-for="(section, si) in filtered" :key="section.label">
+          <div>
+            <div class="command-section-label" x-text="section.label"></div>
+            <template x-for="(item, ii) in section.items" :key="item.url">
+              <div class="command-item"
+                   :class="{ selected: selectedIdx === flatIdx(si, ii) }"
+                   @click="navigate(item.url)"
+                   @mouseenter="selectedIdx = flatIdx(si, ii)">
+                <i :class="item.icon"></i>
+                <span x-text="item.name"></span>
+                <span class="command-shortcut" x-show="item.shortcut" x-text="item.shortcut"></span>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Status bar ──────────────────────────────────────────────────── -->
+  <div class="status-bar" x-data>
+    <div class="status-bar-left">
+      <div class="status-bar-item">
+        <span class="status-dot" :class="$store.app.wsConnected ? 'connected' : 'disconnected'"></span>
+        <span x-text="$store.app.wsConnected ? 'WS CONNECTED' : 'WS DISCONNECTED'">--</span>
+      </div>
+      <div class="status-bar-item">
+        <span>LATENCY</span>
+        <span x-text="($store.app.wsLatency || '--') + 'ms'">--</span>
+      </div>
+      <div class="status-bar-item">
+        <span>LAST TICK</span>
+        <span x-text="$store.app.lastTick || '--'">--</span>
+      </div>
+    </div>
+    <div class="status-bar-right">
+      <div class="status-bar-item">
+        <span x-text="$store.app.mode.toUpperCase()">--</span>
+        <span>&middot;</span>
+        <span x-text="$store.app.regimeLabel">--</span>
+      </div>
+      <div class="status-bar-item">
+        <span>v0.1.0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Core app JS ──────────────────────────────────────────────────── -->
   <script src="{{ url_for('static', filename='js/stores.js') }}"></script>
   <script src="{{ url_for('static', filename='js/socket.js') }}"></script>
   <script src="{{ url_for('static', filename='js/clock.js') }}"></script>
   <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
   <script src="{{ url_for('static', filename='js/paisa-api.js') }}"></script>
+
+  <!-- ── Command palette data ─────────────────────────────────────────── -->
+  <script>
+  function commandPalette() {
+    const pages = [
+      { section: 'ETF Strategies', name: 'Dashboard',       url: '/dashboard',  icon: 'fa-solid fa-chart-line',      shortcut: '' },
+      { section: 'ETF Strategies', name: 'Factors',          url: '/factors',    icon: 'fa-solid fa-layer-group',     shortcut: '' },
+      { section: 'ETF Strategies', name: 'Rotation',         url: '/rotation',   icon: 'fa-solid fa-rotate',          shortcut: '' },
+      { section: 'ETF Strategies', name: 'Execution',        url: '/execution',  icon: 'fa-solid fa-bolt',            shortcut: '' },
+      { section: 'ETF Strategies', name: 'Portfolio',         url: '/portfolio',  icon: 'fa-solid fa-chart-pie',       shortcut: '' },
+      { section: 'ETF Strategies', name: 'Backtest',          url: '/backtest',   icon: 'fa-solid fa-flask-vial',      shortcut: '' },
+      { section: 'Equity Research', name: 'Screener',        url: '/stocks',             icon: 'fa-solid fa-filter',          shortcut: '' },
+      { section: 'Equity Research', name: 'Securities',      url: '/stocks/securities',  icon: 'fa-solid fa-chart-candlestick', shortcut: '' },
+      { section: 'Equity Research', name: 'Stock Factors',   url: '/stocks/factors',     icon: 'fa-solid fa-square-poll-vertical', shortcut: '' },
+      { section: 'Equity Research', name: 'Stock Backtest',  url: '/stocks/backtest',    icon: 'fa-solid fa-vial',            shortcut: '' },
+      { section: 'Market Intelligence', name: 'News & Sentiment', url: '/intel/news',  icon: 'fa-solid fa-newspaper',   shortcut: '' },
+      { section: 'Market Intelligence', name: 'Data Center',     url: '/intel/data',  icon: 'fa-solid fa-database',    shortcut: '' },
+      { section: 'Market Intelligence', name: 'Macro Calendar',  url: '/intel/macro', icon: 'fa-solid fa-globe',       shortcut: '' },
+      { section: 'System', name: 'Pipelines',     url: '/pipelines', icon: 'fa-solid fa-network-wired',          shortcut: '' },
+      { section: 'System', name: 'Alerts',         url: '/alerts',    icon: 'fa-solid fa-triangle-exclamation',  shortcut: '' },
+      { section: 'System', name: 'Configuration',  url: '/config',    icon: 'fa-solid fa-gear',                  shortcut: '' },
+    ];
+    return {
+      query: '',
+      selectedIdx: 0,
+      filtered: [],
+      init() { this.filter(); },
+      filter() {
+        const q = this.query.toLowerCase();
+        const matched = q ? pages.filter(p => p.name.toLowerCase().includes(q) || p.section.toLowerCase().includes(q)) : pages;
+        const groups = {};
+        matched.forEach(p => { (groups[p.section] = groups[p.section] || []).push(p); });
+        this.filtered = Object.entries(groups).map(([label, items]) => ({ label, items }));
+        this.selectedIdx = 0;
+      },
+      flatIdx(si, ii) {
+        let idx = 0;
+        for (let s = 0; s < si; s++) idx += this.filtered[s].items.length;
+        return idx + ii;
+      },
+      flatTotal() { return this.filtered.reduce((s, g) => s + g.items.length, 0); },
+      moveDown() { this.selectedIdx = (this.selectedIdx + 1) % this.flatTotal(); },
+      moveUp()   { this.selectedIdx = (this.selectedIdx - 1 + this.flatTotal()) % this.flatTotal(); },
+      go() {
+        let idx = 0;
+        for (const section of this.filtered) {
+          for (const item of section.items) {
+            if (idx === this.selectedIdx) { this.navigate(item.url); return; }
+            idx++;
+          }
+        }
+      },
+      navigate(url) { window.location.href = url; }
+    };
+  }
+  </script>
+
   {% block extra_js %}{% endblock %}
 
 </body>

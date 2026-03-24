@@ -293,6 +293,116 @@
 .alert-time { font-size: var(--text-xs); color: var(--text-muted); font-family: var(--font-mono); margin-top: 4px; }
 .alert-empty { text-align: center; color: var(--text-muted); padding: var(--space-8); font-size: var(--text-sm); }
 
+/* ── Status bar (bottom) ──────────────────────────────────────────────── */
+.status-bar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  height: var(--statusbar-height);
+  z-index: var(--z-statusbar);
+  background: var(--bg-surface);
+  border-top: 1px solid var(--bg-border);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 var(--space-4);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.status-bar-left,
+.status-bar-right {
+  display: flex; align-items: center; gap: var(--space-4);
+}
+.status-bar-item {
+  display: flex; align-items: center; gap: var(--space-1);
+}
+.status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+}
+.status-dot.connected { background: var(--green); box-shadow: 0 0 4px var(--green); }
+.status-dot.disconnected { background: var(--red); }
+.status-dot.stale { background: var(--yellow); }
+
+/* ── Command palette (⌘K) ────────────────────────────────────────────── */
+.command-overlay {
+  position: fixed; inset: 0;
+  z-index: var(--z-command);
+  background: rgba(0,0,0,0.6);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 15vh;
+}
+.command-box {
+  width: 520px;
+  background: var(--bg-surface);
+  border: 1px solid var(--bg-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+.command-input-wrap {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--bg-border);
+}
+.command-input-wrap i { color: var(--text-muted); font-size: var(--text-md); }
+.command-input {
+  flex: 1; background: none; border: none; outline: none;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+}
+.command-input::placeholder { color: var(--text-muted); }
+.command-results {
+  max-height: 320px;
+  overflow-y: auto;
+}
+.command-item {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  transition: background var(--transition-fast);
+}
+.command-item:hover,
+.command-item.selected { background: var(--bg-elevated); color: var(--text-primary); }
+.command-item i { width: 16px; text-align: center; color: var(--text-muted); }
+.command-item .command-shortcut {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 1px 4px;
+  border: 1px solid var(--bg-border);
+  border-radius: var(--radius-sm);
+}
+.command-section-label {
+  padding: var(--space-2) var(--space-4);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* ── Nav section collapsible ─────────────────────────────────────────── */
+.nav-section {
+  margin-bottom: var(--space-1);
+}
+.nav-section-label {
+  display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer; user-select: none;
+}
+.nav-section-label .chevron {
+  font-size: 9px;
+  transition: transform var(--transition-fast);
+  color: var(--text-muted);
+}
+.nav-section.collapsed .chevron { transform: rotate(-90deg); }
+.nav-section.collapsed .nav-section-items { display: none; }
+
+/* ── Content area with status bar offset ─────────────────────────────── */
+.content-area {
+  padding-bottom: calc(var(--statusbar-height) + var(--space-5));
+}
+
 /* ── Animations ───────────────────────────────────────────────────────── */
 @keyframes pulse {
   0%, 100% { opacity: 1; }

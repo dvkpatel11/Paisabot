@@ -36,10 +36,27 @@
 
   function setConnected(ok) {
     const el = document.getElementById('clock-status');
-    if (!el) return;
-    // The clock module manages the status text; just mark connection state
-    el.dataset.socketConnected = ok ? '1' : '0';
+    if (el) el.dataset.socketConnected = ok ? '1' : '0';
+    // Update Alpine store for status bar
+    if (typeof Alpine !== 'undefined' && Alpine.store('app')) {
+      Alpine.store('app').wsConnected = ok;
+    }
   }
+
+  // Latency measurement via Socket.IO ping
+  let _pingStart = 0;
+  setInterval(() => {
+    if (socket.connected) {
+      _pingStart = performance.now();
+      socket.emit('ping_check');
+    }
+  }, 10000);
+  socket.on('pong_check', () => {
+    const latency = Math.round(performance.now() - _pingStart);
+    if (typeof Alpine !== 'undefined' && Alpine.store('app')) {
+      Alpine.store('app').wsLatency = latency;
+    }
+  });
 
   /* ── Factor scores ──────────────────────────────────────────────────── */
   socket.on('factor_scores', (data) => {

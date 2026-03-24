@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Macro Calendar - Paisabot{% endblock %}
+
+{% block content %}
+<div class="page-tabs" x-data="{ tab: 'economic' }">
+  <div class="page-tab-bar">
+    <button class="page-tab" :class="{ active: tab==='economic' }"  @click="tab='economic'">ECONOMIC EVENTS</button>
+    <button class="page-tab" :class="{ active: tab==='earnings' }"  @click="tab='earnings'">EARNINGS CALENDAR</button>
+    <button class="page-tab" :class="{ active: tab==='fed' }"      @click="tab='fed'">FED WATCH</button>
+    <button class="page-tab" :class="{ active: tab==='dates' }"    @click="tab='dates'">KEY DATES</button>
+  </div>
+
+  <!-- ECONOMIC EVENTS -->
+  <div class="page-tab-panel" x-show="tab==='economic'">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title"><i class="fa-solid fa-globe"></i> Economic Calendar</h1>
+        <p class="page-subtitle">High-impact economic releases and macro events</p>
+      </div>
+      <div class="page-actions">
+        <select class="select" id="econ-importance">
+          <option value="">All Importance</option>
+          <option value="high" selected>High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+        <select class="select" id="econ-country">
+          <option value="US" selected>United States</option>
+          <option value="">All Countries</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Upcoming highlights -->
+    <div class="grid grid-4" style="margin-top:var(--space-4)">
+      <div class="stat-tile">
+        <span class="stat-label">Next Event</span>
+        <span class="stat-value" id="econ-next-event" style="font-size:var(--text-md)">--</span>
+        <span class="stat-sub mono" id="econ-next-time">--</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-label">Events Today</span>
+        <span class="stat-value mono" id="econ-today-count">--</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-label">Events This Week</span>
+        <span class="stat-value mono" id="econ-week-count">--</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-label">High Impact</span>
+        <span class="stat-value mono" id="econ-high-count" style="color:var(--red)">--</span>
+      </div>
+    </div>
+
+    <!-- Calendar table -->
+    <div class="panel" style="margin-top:var(--space-4)">
+      <div class="panel-header">
+        <span class="panel-title">Events</span>
+        <div style="display:flex;gap:var(--space-2)">
+          <button class="btn btn-ghost btn-sm" id="econ-prev-week"><i class="fa-solid fa-chevron-left"></i></button>
+          <span class="mono" id="econ-week-label" style="font-size:var(--text-sm)">This Week</span>
+          <button class="btn btn-ghost btn-sm" id="econ-next-week"><i class="fa-solid fa-chevron-right"></i></button>
+        </div>
+      </div>
+      <div id="econ-events-table" style="min-height:400px"></div>
+    </div>
+  </div>
+
+  <!-- EARNINGS CALENDAR -->
+  <div class="page-tab-panel" x-show="tab==='earnings'">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title"><i class="fa-solid fa-calendar-days"></i> Earnings Calendar</h1>
+        <p class="page-subtitle">Upcoming earnings reports from the FMP calendar</p>
+      </div>
+    </div>
+    <div class="grid grid-3" style="margin-top:var(--space-4)">
+      <div class="stat-tile">
+        <span class="stat-label">Reporting This Week</span>
+        <span class="stat-value mono" id="earn-week-count">--</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-label">In Universe</span>
+        <span class="stat-value mono" id="earn-universe-count">--</span>
+        <span class="stat-sub">stocks we track</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-label">Next Major</span>
+        <span class="stat-value" id="earn-next-major" style="font-size:var(--text-md)">--</span>
+        <span class="stat-sub mono" id="earn-next-date">--</span>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:var(--space-4)">
+      <div id="macro-earnings-table" style="min-height:400px"></div>
+    </div>
+  </div>
+
+  <!-- FED WATCH -->
+  <div class="page-tab-panel" x-show="tab==='fed'">
+    <div class="page-header">
+      <h1 class="page-title"><i class="fa-solid fa-landmark"></i> Fed Watch</h1>
+      <p class="page-subtitle">FOMC meeting schedule and rate expectations</p>
+    </div>
+    <div class="grid grid-3" style="margin-top:var(--space-4)">
+      <div class="stat-tile">
+        <span class="stat-label">Current Rate</span>
+        <span class="stat-value mono" id="fed-current-rate">--</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-label">Next Meeting</span>
+        <span class="stat-value" id="fed-next-meeting" style="font-size:var(--text-md)">--</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-label">Market Implied</span>
+        <span class="stat-value mono" id="fed-implied">--</span>
+        <span class="stat-sub">probability of cut</span>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:var(--space-4)">
+      <div class="panel-header"><span class="panel-title">FOMC Meeting Schedule</span></div>
+      <div id="fed-schedule-table" style="min-height:300px"></div>
+    </div>
+  </div>
+
+  <!-- KEY DATES -->
+  <div class="page-tab-panel" x-show="tab==='dates'">
+    <div class="page-header">
+      <h1 class="page-title"><i class="fa-solid fa-calendar-check"></i> Key Dates</h1>
+      <p class="page-subtitle">Options expiration, dividend ex-dates, and market holidays</p>
+    </div>
+    <div class="grid grid-2" style="margin-top:var(--space-4)">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Options Expiration</span></div>
+        <div id="opex-table" style="min-height:250px"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Market Holidays</span></div>
+        <div id="holidays-table" style="min-height:250px"></div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:var(--space-4)">
+      <div class="panel-header"><span class="panel-title">Upcoming Dividend Ex-Dates (Universe)</span></div>
+      <div id="dividends-table" style="min-height:300px"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/pages/intel_macro.js') }}"></script>
+{% endblock %}

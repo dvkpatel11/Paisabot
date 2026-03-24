@@ -19,6 +19,11 @@ document.addEventListener('alpine:init', () => {
     killSwitchActive: false,
     killSwitchMsg: 'TRADING HALTED',
 
+    // WebSocket / status bar state
+    wsConnected: false,
+    wsLatency: null,
+    lastTick: null,
+
     // System health: keyed by module initial
     health: {
       data:      'unknown',

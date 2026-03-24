@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Stock Factors - Paisabot{% endblock %}
+
+{% block content %}
+<div class="page-tabs" x-data="{ tab: 'rankings' }">
+  <div class="page-tab-bar">
+    <button class="page-tab" :class="{ active: tab==='rankings' }"    @click="tab='rankings'">SIGNAL RANKINGS</button>
+    <button class="page-tab" :class="{ active: tab==='heatmap' }"     @click="tab='heatmap'">HEATMAP</button>
+    <button class="page-tab" :class="{ active: tab==='fundamentals' }" @click="tab='fundamentals'">FUNDAMENTALS HEATMAP</button>
+    <button class="page-tab" :class="{ active: tab==='earnings' }"    @click="tab='earnings'">EARNINGS CALENDAR</button>
+  </div>
+
+  <!-- SIGNAL RANKINGS -->
+  <div class="page-tab-panel" x-show="tab==='rankings'">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title"><i class="fa-solid fa-square-poll-vertical"></i> Stock Signal Rankings</h1>
+        <p class="page-subtitle">Cross-sectional factor scoring for the equity universe</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-outline btn-sm" id="btn-compute-stock-factors">
+          <i class="fa-solid fa-calculator"></i> Compute
+        </button>
+      </div>
+    </div>
+    <div class="grid grid-3" style="margin-top:var(--space-4)">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title" style="color:var(--green)">LONG</span></div>
+        <div id="stock-long-signals" style="min-height:250px"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title" style="color:var(--yellow)">NEUTRAL</span></div>
+        <div id="stock-neutral-signals" style="min-height:250px"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title" style="color:var(--red)">AVOID</span></div>
+        <div id="stock-avoid-signals" style="min-height:250px"></div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:var(--space-4)">
+      <div class="panel-header"><span class="panel-title">Full Rankings Table</span></div>
+      <div id="stock-rankings-table" style="min-height:400px"></div>
+    </div>
+  </div>
+
+  <!-- HEATMAP -->
+  <div class="page-tab-panel" x-show="tab==='heatmap'">
+    <div class="page-header">
+      <h1 class="page-title"><i class="fa-solid fa-grip"></i> Factor Heatmap</h1>
+    </div>
+    <div class="panel" style="margin-top:var(--space-4)">
+      <div id="stock-factor-heatmap" style="height:500px"></div>
+    </div>
+  </div>
+
+  <!-- FUNDAMENTALS HEATMAP -->
+  <div class="page-tab-panel" x-show="tab==='fundamentals'">
+    <div class="page-header">
+      <h1 class="page-title"><i class="fa-solid fa-table-cells"></i> Fundamentals Heatmap</h1>
+      <p class="page-subtitle">Visual comparison of key fundamental metrics across the stock universe</p>
+    </div>
+    <div class="panel" style="margin-top:var(--space-4)">
+      <div class="panel-header">
+        <span class="panel-title">Metric</span>
+        <select class="select" id="fund-heatmap-metric">
+          <option value="pe_ratio">P/E Ratio</option>
+          <option value="pb_ratio">P/B Ratio</option>
+          <option value="roe">ROE</option>
+          <option value="revenue_growth">Revenue Growth</option>
+          <option value="net_margin">Net Margin</option>
+        </select>
+      </div>
+      <div id="fundamentals-heatmap" style="height:500px"></div>
+    </div>
+  </div>
+
+  <!-- EARNINGS CALENDAR -->
+  <div class="page-tab-panel" x-show="tab==='earnings'">
+    <div class="page-header">
+      <h1 class="page-title"><i class="fa-solid fa-calendar-days"></i> Earnings Calendar</h1>
+    </div>
+    <div class="panel" style="margin-top:var(--space-4)">
+      <div class="panel-header">
+        <span class="panel-title">Upcoming Earnings</span>
+        <div style="display:flex;gap:var(--space-2)">
+          <button class="btn btn-ghost btn-sm" id="earnings-prev"><i class="fa-solid fa-chevron-left"></i></button>
+          <span class="mono" id="earnings-week" style="font-size:var(--text-sm)">This Week</span>
+          <button class="btn btn-ghost btn-sm" id="earnings-next"><i class="fa-solid fa-chevron-right"></i></button>
+        </div>
+      </div>
+      <div id="earnings-table" style="min-height:400px"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/pages/stock_factors.js') }}"></script>
+{% endblock %}

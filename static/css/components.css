@@ -201,7 +201,7 @@
   100% { background: transparent; }
 }
 
-/* ── Tabs ─────────────────────────────────────────────────────────────── */
+/* ── Tabs (legacy) ───────────────────────────────────────────────────── */
 .tabs { display: flex; border-bottom: 1px solid var(--bg-border); gap: 0; }
 .tab-btn {
   padding: 8px 16px;
@@ -220,6 +220,102 @@
 .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
+
+/* ── Page Tabs (Bloomberg-style) ─────────────────────────────────────── */
+/* Usage: <div class="page-tabs" x-data="{ tab: 'first' }">
+     <div class="page-tab-bar">
+       <button class="page-tab" :class="{ active: tab==='first' }" @click="tab='first'">FIRST</button>
+       ...
+     </div>
+     <div class="page-tab-panel" x-show="tab==='first'">...</div>
+   </div> */
+.page-tabs {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.page-tab-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  height: var(--tab-height);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--bg-border);
+  padding: 0 var(--space-2);
+  flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.page-tab-bar::-webkit-scrollbar { display: none; }
+.page-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  height: 100%;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+  font-family: var(--font-sans);
+}
+.page-tab:hover { color: var(--text-secondary); }
+.page-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.page-tab .tab-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-overlay);
+  color: var(--text-muted);
+}
+.page-tab.active .tab-count {
+  background: var(--accent-glow);
+  color: var(--accent);
+}
+.page-tab-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+/* ── Compact data density ────────────────────────────────────────────── */
+.dense .data-table tbody td { padding: var(--cell-pad-y) var(--cell-pad-x); font-size: var(--text-xs); }
+.dense .data-table thead th { padding: var(--cell-pad-y) var(--cell-pad-x); }
+.dense .panel-body { padding: var(--panel-pad); }
+.dense .stat-tile { padding: var(--space-3) var(--space-4); }
+.dense .stat-value { font-size: var(--text-lg); }
+
+/* ── Inline sparkline (in table cells) ───────────────────────────────── */
+.cell-spark { display: inline-block; width: 60px; height: 20px; vertical-align: middle; }
+
+/* ── Score bar inline (in table cells) ───────────────────────────────── */
+.cell-score-bar {
+  display: inline-block; width: 48px; height: 4px;
+  background: var(--bg-overlay); border-radius: 2px;
+  vertical-align: middle; margin-left: var(--space-2);
+  position: relative; overflow: hidden;
+}
+.cell-score-bar > span {
+  position: absolute; left: 0; top: 0; height: 100%; border-radius: 2px;
+}
+
+/* ── Live cell tick flash ────────────────────────────────────────────── */
+.tick-up   { animation: tickFlashUp   0.6s ease forwards; }
+.tick-down { animation: tickFlashDown 0.6s ease forwards; }
+@keyframes tickFlashUp   { 0% { background: var(--flash-up); }   100% { background: transparent; } }
+@keyframes tickFlashDown { 0% { background: var(--flash-down); } 100% { background: transparent; } }
 
 /* ── Toggle / switch ──────────────────────────────────────────────────── */
 .toggle {
