@@ -44,6 +44,12 @@ class TestingConfig(BaseConfig):
         'TEST_DATABASE_URL',
         'sqlite://'  # in-memory SQLite for tests without Docker
     )
+    # Keep a single connection for in-memory SQLite so tables created on one
+    # connection are visible to others within the same test.
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'poolclass': __import__('sqlalchemy.pool', fromlist=['StaticPool']).StaticPool,
+        'connect_args': {'check_same_thread': False},
+    }
     REDIS_URL = os.environ.get('TEST_REDIS_URL', 'redis://localhost:6379/15')
 
 

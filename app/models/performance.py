@@ -23,7 +23,6 @@ class PerformanceMetric(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint('date', 'asset_class', name='uq_perf_date_asset_class'),
-        db.Index('ix_performance_asset_class', 'asset_class'),
     )
 
     def __repr__(self):

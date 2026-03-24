@@ -65,7 +65,7 @@ def create_app(config_name: str = 'development') -> Flask:
     socketio.init_app(
         app,
         message_queue=app.config['REDIS_URL'],
-        async_mode='eventlet',
+        async_mode='threading' if app.config.get('TESTING') else 'eventlet',
         cors_allowed_origins=cors_origins,
     )
 
