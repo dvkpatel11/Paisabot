@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Bloomberg density base ──────────────────────────────────────────── */
+@layer base {
+  :root {
+    --row-height: 28px;
+    --tab-height: 36px;
+    --cell-pad-x: 8px;
+    --cell-pad-y: 4px;
+  }
+
+  * { scrollbar-width: thin; scrollbar-color: #1e3050 #0c1220; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #0c1220; }
+  ::-webkit-scrollbar-thumb { background: #1e3050; border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3d5a78; }
+
+  /* Monospace for all numeric data */
+  .mono { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+}
+
+/* ── Reusable component patterns ─────────────────────────────────────── */
+@layer components {
+  .panel {
+    @apply bg-surface border border-border rounded-lg overflow-hidden;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+  }
+  .panel-header {
+    @apply flex items-center justify-between px-3 py-2 border-b border-border bg-elevated text-xs font-semibold text-secondary uppercase tracking-wider;
+  }
+  .panel-body { @apply p-3; }
+
+  .stat-tile {
+    @apply bg-surface border border-border rounded-lg px-4 py-3 flex flex-col gap-0.5 transition-colors;
+  }
+  .stat-tile:hover { @apply border-accent; }
+  .stat-label { @apply text-2xs font-semibold text-muted uppercase tracking-widest; }
+  .stat-value { @apply font-mono text-2xl font-semibold text-primary leading-tight; }
+  .stat-sub { @apply text-2xs text-secondary font-mono flex items-center gap-1; }
+
+  /* Page-level tab bar */
+  .page-tab-bar {
+    @apply flex items-stretch h-9 bg-surface border-b border-border px-2 shrink-0 overflow-x-auto;
+    scrollbar-width: none;
+  }
+  .page-tab-bar::-webkit-scrollbar { display: none; }
+  .page-tab {
+    @apply flex items-center gap-2 px-4 h-full text-2xs font-semibold text-muted uppercase tracking-widest
+           border-b-2 border-transparent cursor-pointer whitespace-nowrap transition-colors;
+  }
+  .page-tab:hover { @apply text-secondary; }
+  .page-tab.active { @apply text-accent border-accent; }
+
+  /* Score bar (0–1) */
+  .score-bar { @apply flex items-center gap-2; }
+  .score-track { @apply flex-1 h-1 bg-overlay rounded-full overflow-hidden; }
+  .score-fill { @apply h-full rounded-full transition-all duration-500; }
+
+  /* PnL coloring */
+  .pos { @apply text-profit; }
+  .neg { @apply text-loss; }
+  .flat { @apply text-secondary; }
+}
