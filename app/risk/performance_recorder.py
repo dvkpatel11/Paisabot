@@ -59,13 +59,6 @@ class PerformanceRecorder:
             status='open', asset_class=asset_class,
         ).all()
 
-        # Skip if no positions and no prior history for this asset class
-        prior_exists = PerformanceMetric.query.filter_by(
-            asset_class=asset_class,
-        ).first()
-        if not positions and not prior_exists:
-            return None
-
         total_notional = sum(float(p.notional or 0) for p in positions)
         total_unrealized = sum(float(p.unrealized_pnl or 0) for p in positions)
         total_realized = sum(float(p.realized_pnl or 0) for p in positions)
