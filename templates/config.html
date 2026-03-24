@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+{% block title %}Configuration - Paisabot{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>System Configuration</h1>
+</div>
+
+<!-- Mode Selector -->
+<div class="panel">
+  <div class="panel-header"><h2>Operational Mode</h2></div>
+  <div class="mode-selector" id="mode-selector">
+    <button class="btn btn-mode" data-mode="research" onclick="setMode('research')">RESEARCH</button>
+    <button class="btn btn-mode" data-mode="simulation" onclick="setMode('simulation')">SIMULATION</button>
+    <button class="btn btn-mode btn-danger-outline" data-mode="live" onclick="setMode('live')">LIVE</button>
+  </div>
+</div>
+
+<!-- Kill Switches -->
+<div class="panel">
+  <div class="panel-header"><h2>Kill Switches</h2></div>
+  <div class="switch-grid" id="config-switches"></div>
+</div>
+
+<!-- Config Tabs -->
+<div class="panel panel-full">
+  <div class="tab-bar" id="config-tabs">
+    <button class="tab active" onclick="showTab('weights', this)">Weights</button>
+    <button class="tab" onclick="showTab('backtest', this)">Backtest</button>
+    <button class="tab" onclick="showTab('portfolio', this)">Portfolio</button>
+    <button class="tab" onclick="showTab('risk', this)">Risk</button>
+    <button class="tab" onclick="showTab('execution', this)">Execution</button>
+    <button class="tab" onclick="showTab('data', this)">Data</button>
+    <button class="tab" onclick="showTab('universe', this)">Universe</button>
+    <button class="tab" onclick="showTab('schedule', this)">Schedule</button>
+    <button class="tab" onclick="showTab('alerts', this)">Alerts</button>
+    <button class="tab" onclick="showTab('audit', this)">Audit Log</button>
+  </div>
+
+  <div class="tab-content" id="tab-content">
+    <div class="loading">Loading configuration...</div>
+  </div>
+</div>
+{% endblock %}
+
+<style>
+.wt-row { display:flex; align-items:center; gap:8px; }
+.wt-row label { width:85px; font-size:12px; color:var(--text-secondary); }
+.wt-row input[type=range] { flex:1; }
+.wt-row span { width:38px; text-align:right; font-family:'JetBrains Mono',monospace; font-size:11px; }
+.stat-card { text-align:center; padding:12px; background:var(--bg-panel); border:1px solid var(--border); border-radius:6px; }
+.stat-label { font-size:11px; color:var(--text-muted); margin-bottom:4px; }
+.stat-value { font-size:20px; font-weight:700; font-family:'JetBrains Mono',monospace; }
+.input-field { background:var(--bg-panel); border:1px solid var(--border); border-radius:4px; padding:6px 8px; color:var(--text-primary); font-size:13px; }
+</style>
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/config.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Load mode
+  fetch('/api/health').then(r => r.json()).then(data => {
+    // Get mode from config
+    fetch('/api/config/system').then(r => r.json()).then(cfg => {
+      const mode = cfg.operational_mode ? cfg.operational_mode.value : 'simulation';
+      document.querySelectorAll('.btn-mode').forEach(b => {
+        b.classList.toggle('active', b.dataset.mode === mode);
+      });
+    });
+
+    // Kill switches
+    const container = document.getElementById('config-switches');
+    container.innerHTML = '';
+    if (data.kill_switches) {
+      Object.entries(data.kill_switches).forEach(([name, active]) => {
+        const div = document.createElement('div');
+        div.className = 'switch-item ' + (active ? 'switch-active' : 'switch-inactive');
+        div.innerHTML = '<span class="switch-name">' + name.replace('_', ' ').toUpperCase() + '</span>' +
+                         '<span class="switch-status">' + (active ? 'ACTIVE' : 'OFF') + '</span>';
+        div.onclick = function() {
+          fetch('/api/control/' + name, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({active: !active}),
+          }).then(() => location.reload());
+        };
+        container.appendChild(div);
+      });
+    }
+  });
+
+  // Show initial tab
+  showTab('weights', document.querySelector('.tab.active'));
+});
+
+function setMode(mode) {
+  let body = {mode: mode};
+  if (mode === 'live') {
+    const confirm = prompt('Type I_CONFIRM_LIVE_TRADING to switch to live mode:');
+    if (confirm !== 'I_CONFIRM_LIVE_TRADING') return;
+    body.confirm = confirm;
+  }
+
+  fetch('/api/config/mode', {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  }).then(r => r.json()).then(data => {
+    if (data.error) { alert(data.error); return; }
+    document.querySelectorAll('.btn-mode').forEach(b => {
+      b.classList.toggle('active', b.dataset.mode === data.mode);
+    });
+  });
+}
+
+function showTab(category, btn) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+
+  if (category === 'audit') {
+    PaisaConfig.loadAudit();
+    return;
+  }
+
+  if (category === 'backtest') {
+    showBacktestTab();
+    return;
+  }
+
+  PaisaConfig.loadCategory(category);
+}
+
+function showBacktestTab() {
+  const container = document.getElementById('tab-content');
+  container.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <div>
+        <h3 style="margin-bottom:8px;font-size:14px;color:var(--text-secondary)">Date Range</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <label style="font-size:12px;color:var(--text-muted)">Start<br>
+            <input type="date" id="bt-start" class="input-field" value="2023-01-01" style="width:100%;margin-top:4px">
+          </label>
+          <label style="font-size:12px;color:var(--text-muted)">End<br>
+            <input type="date" id="bt-end" class="input-field" style="width:100%;margin-top:4px">
+          </label>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px">
+          <label style="font-size:12px;color:var(--text-muted)">Capital ($)<br>
+            <input type="number" id="bt-capital" class="input-field" value="100000" step="10000" style="width:100%;margin-top:4px">
+          </label>
+          <label style="font-size:12px;color:var(--text-muted)">Rebalance<br>
+            <select id="bt-rebal" class="select-input" style="width:100%;margin-top:4px">
+              <option value="weekly" selected>Weekly</option>
+              <option value="daily">Daily</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </label>
+          <label style="font-size:12px;color:var(--text-muted)">Max Pos<br>
+            <input type="number" id="bt-maxpos" class="input-field" value="10" min="1" max="20" style="width:100%;margin-top:4px">
+          </label>
+        </div>
+        <label style="font-size:12px;color:var(--text-muted);display:block;margin-top:8px">Slippage (bps)<br>
+          <input type="number" id="bt-slip" class="input-field" value="2" step="0.5" min="0" style="width:100%;margin-top:4px">
+        </label>
+      </div>
+      <div>
+        <h3 style="margin-bottom:8px;font-size:14px;color:var(--text-secondary)">Factor Weights</h3>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div class="wt-row"><label>Trend</label><input type="range" id="w-trend" min="0" max="100" value="30" oninput="this.nextElementSibling.textContent=this.value+'%'"><span>30%</span></div>
+          <div class="wt-row"><label>Volatility</label><input type="range" id="w-volatility" min="0" max="100" value="25" oninput="this.nextElementSibling.textContent=this.value+'%'"><span>25%</span></div>
+          <div class="wt-row"><label>Sentiment</label><input type="range" id="w-sentiment" min="0" max="100" value="15" oninput="this.nextElementSibling.textContent=this.value+'%'"><span>15%</span></div>
+          <div class="wt-row"><label>Breadth</label><input type="range" id="w-breadth" min="0" max="100" value="15" oninput="this.nextElementSibling.textContent=this.value+'%'"><span>15%</span></div>
+          <div class="wt-row"><label>Liquidity</label><input type="range" id="w-liquidity" min="0" max="100" value="15" oninput="this.nextElementSibling.textContent=this.value+'%'"><span>15%</span></div>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+          <button class="btn btn-primary" id="btn-bt-run" onclick="runConfigBacktest()">Run Backtest</button>
+          <span id="bt-status" class="text-muted" style="font-size:12px"></span>
+        </div>
+      </div>
+    </div>
+    <div id="bt-results" style="display:none">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+        <div class="stat-card"><div class="stat-label">Total Return</div><div class="stat-value" id="bt-m-return">--</div></div>
+        <div class="stat-card"><div class="stat-label">CAGR</div><div class="stat-value" id="bt-m-cagr">--</div></div>
+        <div class="stat-card"><div class="stat-label">Sharpe</div><div class="stat-value" id="bt-m-sharpe">--</div></div>
+        <div class="stat-card"><div class="stat-label">Max Drawdown</div><div class="stat-value" id="bt-m-maxdd">--</div></div>
+      </div>
+      <div id="bt-equity-chart" style="height:300px;margin-bottom:16px"></div>
+      <div id="bt-drawdown-chart" style="height:180px;margin-bottom:16px"></div>
+      <div id="bt-trade-table"></div>
+    </div>
+  `;
+  document.getElementById('bt-end').value = new Date().toISOString().slice(0, 10);
+}
+
+function runConfigBacktest() {
+  const btn = document.getElementById('btn-bt-run');
+  const status = document.getElementById('bt-status');
+  btn.disabled = true;
+  btn.textContent = 'Running...';
+  status.textContent = 'Computing...';
+
+  const weights = {
+    trend: parseInt(document.getElementById('w-trend').value) / 100,
+    volatility: parseInt(document.getElementById('w-volatility').value) / 100,
+    sentiment: parseInt(document.getElementById('w-sentiment').value) / 100,
+    breadth: parseInt(document.getElementById('w-breadth').value) / 100,
+    liquidity: parseInt(document.getElementById('w-liquidity').value) / 100,
+  };
+
+  const body = {
+    weights: weights,
+    start_date: document.getElementById('bt-start').value,
+    end_date: document.getElementById('bt-end').value,
+    initial_capital: parseFloat(document.getElementById('bt-capital').value),
+    rebalance_freq: document.getElementById('bt-rebal').value,
+    max_positions: parseInt(document.getElementById('bt-maxpos').value),
+    slippage_bps: parseFloat(document.getElementById('bt-slip').value),
+  };
+
+  fetch('/api/backtest/run', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  })
+  .then(r => r.json())
+  .then(data => {
+    btn.disabled = false;
+    btn.textContent = 'Run Backtest';
+
+    if (data.metrics && data.metrics.error) {
+      status.textContent = data.metrics.error;
+      return;
+    }
+
+    status.textContent = 'Complete';
+    document.getElementById('bt-results').style.display = 'block';
+
+    const m = data.metrics;
+    const rtnEl = document.getElementById('bt-m-return');
+    rtnEl.textContent = (m.total_return * 100).toFixed(1) + '%';
+    rtnEl.style.color = m.total_return >= 0 ? 'var(--green)' : 'var(--red)';
+    const cagrEl = document.getElementById('bt-m-cagr');
+    cagrEl.textContent = (m.cagr * 100).toFixed(1) + '%';
+    cagrEl.style.color = m.cagr >= 0 ? 'var(--green)' : 'var(--red)';
+    const sharpeEl = document.getElementById('bt-m-sharpe');
+    sharpeEl.textContent = m.sharpe.toFixed(2);
+    sharpeEl.style.color = m.sharpe >= 1 ? 'var(--green)' : m.sharpe >= 0 ? 'var(--yellow)' : 'var(--red)';
+    const ddEl = document.getElementById('bt-m-maxdd');
+    ddEl.textContent = (m.max_drawdown * 100).toFixed(1) + '%';
+    ddEl.style.color = 'var(--red)';
+
+    PaisaCharts.timeSeries('bt-equity-chart', [{
+      x: data.equity_curve.dates, y: data.equity_curve.values,
+      name: 'Portfolio Value', type: 'scatter', mode: 'lines',
+      fill: 'tozeroy', line: {color: '#00d4aa'},
+    }], 'Equity Curve ($)');
+
+    PaisaCharts.timeSeries('bt-drawdown-chart', [{
+      x: data.drawdown.dates, y: data.drawdown.values.map(v => v * 100),
+      name: 'Drawdown', type: 'scatter', mode: 'lines',
+      fill: 'tozeroy', line: {color: '#ff4757'},
+    }], 'Drawdown (%)');
+
+    const cols = [
+      {title: 'Date', field: 'date', width: 100},
+      {title: 'Symbol', field: 'symbol', width: 70},
+      {title: 'Side', field: 'side', width: 50},
+      {title: 'Old Wt', field: 'old_weight', width: 70, hozAlign: 'right'},
+      {title: 'New Wt', field: 'new_weight', width: 70, hozAlign: 'right'},
+      {title: 'Score', field: 'score', width: 70, hozAlign: 'right'},
+    ];
+    PaisaTables.create('bt-trade-table', cols);
+    PaisaTables.setData('bt-trade-table', data.trade_log || []);
+  })
+  .catch(err => {
+    btn.disabled = false;
+    btn.textContent = 'Run Backtest';
+    status.textContent = 'Error: ' + err.message;
+  });
+}
+</script>
+{% endblock %}

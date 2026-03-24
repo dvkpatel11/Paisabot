@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Portfolio - Paisabot{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Portfolio & Performance</h1>
+</div>
+
+<!-- Performance Chart -->
+<div class="panel panel-full">
+  <div class="panel-header">
+    <h2>Equity Curve</h2>
+    <div class="range-bar" id="perf-range-bar">
+      <button class="range-btn" data-days="7">1W</button>
+      <button class="range-btn" data-days="30">1M</button>
+      <button class="range-btn" data-days="90">3M</button>
+      <button class="range-btn" data-days="180">6M</button>
+      <button class="range-btn active" data-days="365">1Y</button>
+      <button class="range-btn" data-days="0">All</button>
+    </div>
+  </div>
+  <div id="equity-chart" style="height:400px"><div class="shimmer" style="height:100%"></div></div>
+</div>
+
+<!-- Metrics Row -->
+<div class="grid grid-2">
+  <div class="panel panel-full">
+    <div class="panel-header"><h2>Drawdown</h2></div>
+    <div id="drawdown-chart" style="height:250px"><div class="shimmer" style="height:100%"></div></div>
+  </div>
+  <div class="panel panel-full">
+    <div class="panel-header"><h2>Rolling Metrics</h2></div>
+    <div id="rolling-chart" style="height:250px"><div class="shimmer" style="height:100%"></div></div>
+  </div>
+</div>
+
+<!-- Performance Summary -->
+<div class="panel panel-full">
+  <div class="panel-header"><h2>Performance Summary</h2></div>
+  <div id="perf-table"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var _perfData = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+  PaisaTables.create('perf-table', [
+    {title: 'Date', field: 'date'},
+    {title: 'Value', field: 'portfolio_value', formatter: 'money'},
+    {title: 'Daily Return', field: 'daily_return', formatter: PaisaTables.pctFormatter},
+    {title: 'Cum Return', field: 'cumulative_return', formatter: PaisaTables.pctFormatter},
+    {title: 'Drawdown', field: 'drawdown', formatter: PaisaTables.pctFormatter},
+    {title: 'Sharpe (30d)', field: 'sharpe_30d'},
+    {title: 'Vol (30d)', field: 'volatility_30d', formatter: PaisaTables.pctFormatter},
+  ], {placeholder: 'No performance data yet. Run a backtest or wait for live trading data.'});
+
+  PaisaUtils.fetchJSON('/api/backtest/results').then(function(data) {
+    _perfData = data;
+    renderPerf(0);
+  }).catch(function() {
+    document.getElementById('equity-chart').innerHTML =
+      '<div class="empty-state">No performance data yet. Run a backtest or wait for live trading data.</div>';
+    document.getElementById('drawdown-chart').innerHTML = '<div class="empty-state">--</div>';
+    document.getElementById('rolling-chart').innerHTML = '<div class="empty-state">--</div>';
+  });
+
+  // Date range buttons
+  document.getElementById('perf-range-bar').addEventListener('click', function(e) {
+    var btn = e.target.closest('.range-btn');
+    if (!btn) return;
+    this.querySelectorAll('.range-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    renderPerf(parseInt(btn.dataset.days));
+  });
+});
+
+function renderPerf(days) {
+  var data = _perfData;
+  if (!data || !data.dates || data.dates.length === 0) {
+    document.getElementById('equity-chart').innerHTML =
+      '<div class="empty-state">No performance data yet. Run a backtest or wait for live trading data.</div>';
+    return;
+  }
+
+  // Slice to requested range
+  var startIdx = 0;
+  if (days > 0 && data.dates.length > days) {
+    startIdx = data.dates.length - days;
+  }
+
+  var dates = data.dates.slice(startIdx);
+  var values = data.portfolio_value.slice(startIdx);
+  var dd = data.drawdown.slice(startIdx);
+  var sharpe = data.sharpe_30d.slice(startIdx);
+  var vol = data.volatility_30d.slice(startIdx);
+  var dailyRet = data.daily_return.slice(startIdx);
+  var cumRet = data.cumulative_return.slice(startIdx);
+
+  // Equity curve
+  PaisaCharts.timeSeries('equity-chart', [{
+    x: dates, y: values, name: 'Portfolio Value',
+    type: 'scatter', mode: 'lines', line: {color: '#3fb950'},
+  }], 'Equity Curve');
+
+  // Drawdown chart
+  PaisaCharts.timeSeries('drawdown-chart', [{
+    x: dates, y: dd, name: 'Drawdown',
+    type: 'scatter', mode: 'lines', fill: 'tozeroy', line: {color: '#f85149'},
+  }], 'Drawdown');
+
+  // Rolling Sharpe + Vol
+  PaisaCharts.timeSeries('rolling-chart', [
+    {x: dates, y: sharpe, name: 'Sharpe (30d)', type: 'scatter', mode: 'lines', line: {color: '#58a6ff'}},
+    {x: dates, y: vol, name: 'Vol (30d)', type: 'scatter', mode: 'lines', line: {color: '#d29922'}, yaxis: 'y2'},
+  ], 'Rolling Metrics');
+
+  // Table data (most recent 30 rows)
+  var rows = dates.map(function(d, i) {
+    return {
+      date: d, portfolio_value: values[i], daily_return: dailyRet[i],
+      cumulative_return: cumRet[i], drawdown: dd[i],
+      sharpe_30d: sharpe[i], volatility_30d: vol[i],
+    };
+  }).reverse().slice(0, 30);
+
+  PaisaTables.setData('perf-table', rows);
+}
+</script>
+{% endblock %}
