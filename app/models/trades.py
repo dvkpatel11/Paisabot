@@ -23,6 +23,9 @@ class Trade(db.Model):
     fill_time = db.Column(db.DateTime(timezone=True))
     signal_composite = db.Column(db.Numeric(6, 4))
     regime = db.Column(db.String(20))
+    direction = db.Column(db.String(5))           # 'long' | 'short'
+    stop_distance_at_entry = db.Column(db.Numeric(8, 6))  # fraction of entry price
+    r_multiple = db.Column(db.Numeric(8, 4))      # realized_pnl_pct / stop_distance; filled at close
     asset_class = db.Column(
         db.String(10), nullable=False, default='etf', server_default='etf', index=True,
     )  # 'etf' or 'stock'

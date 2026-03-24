@@ -59,13 +59,6 @@ class PerformanceRecorder:
             status='open', asset_class=asset_class,
         ).all()
 
-        # Skip if no positions and no prior history for this asset class
-        prior_exists = PerformanceMetric.query.filter_by(
-            asset_class=asset_class,
-        ).first()
-        if not positions and not prior_exists:
-            return None
-
         total_notional = sum(float(p.notional or 0) for p in positions)
         total_unrealized = sum(float(p.unrealized_pnl or 0) for p in positions)
         total_realized = sum(float(p.realized_pnl or 0) for p in positions)
@@ -312,8 +305,9 @@ class PerformanceRecorder:
         if len(returns) < 5:
             return None
         vals = returns[:window]
-        mean_ret = sum(vals) / len(vals)
-        variance = sum((r - mean_ret) ** 2 for r in vals) / len(vals)
+        n = len(vals)
+        mean_ret = sum(vals) / n
+        variance = sum((r - mean_ret) ** 2 for r in vals) / (n - 1)  # sample variance
         std_ret = math.sqrt(variance)
         if std_ret < 1e-10:
             return None
@@ -325,8 +319,9 @@ class PerformanceRecorder:
         if len(returns) < 5:
             return None
         vals = returns[:window]
-        mean_ret = sum(vals) / len(vals)
-        variance = sum((r - mean_ret) ** 2 for r in vals) / len(vals)
+        n = len(vals)
+        mean_ret = sum(vals) / n
+        variance = sum((r - mean_ret) ** 2 for r in vals) / (n - 1)  # sample variance
         return math.sqrt(variance) * math.sqrt(252)
 
     @staticmethod
@@ -337,8 +332,9 @@ class PerformanceRecorder:
         """Parametric VaR at 95% confidence level."""
         if len(returns) < 5:
             return None
-        mean_ret = sum(returns) / len(returns)
-        variance = sum((r - mean_ret) ** 2 for r in returns) / len(returns)
+        n = len(returns)
+        mean_ret = sum(returns) / n
+        variance = sum((r - mean_ret) ** 2 for r in returns) / (n - 1)  # sample variance
         std_ret = math.sqrt(variance)
         # 95% VaR: negative value representing loss
         return -1.645 * std_ret * portfolio_value

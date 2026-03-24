@@ -150,29 +150,45 @@ class TestShortPositionStops:
         assert result['action'] == 'ok'
 
     def test_short_hard_stop(self, engine):
-        # Short at 100, price rises to 108 → -8% loss (default short hard stop = -7%)
-        result = engine.check_position('XLK', 100.0, 108.0, 92.0, direction='short')
+        # Short at 100, price rises to 105 → -5% loss > -4% hard stop threshold
+        result = engine.check_position('XLK', 100.0, 105.0, 92.0, direction='short')
         assert result['action'] == 'exit'
         assert 'hard_stop' in result['reason']
 
+    def test_short_hard_stop_just_inside(self, engine):
+        # Short at 100, price rises to 103.5 → -3.5% loss from entry.
+        # HWM=100 (never profitable) so trailing doesn't fire (-3.5% < -6%).
+        # -3.5% is inside hard stop (-4%) but past soft warn (-2.5%) → reduce.
+        result = engine.check_position('XLK', 100.0, 103.5, 100.0, direction='short')
+        assert result['action'] == 'reduce'
+
     def test_short_trailing_stop(self, engine):
-        # Short at 100, best was 88 (HWM=88), now 97.5 → loss from HWM
-        # from_hwm = (88 - 97.5) / 88 = -0.108 < -0.10 trailing
-        result = engine.check_position('XLK', 100.0, 97.5, 88.0, direction='short')
+        # Short at 100, best price (LWM) = 88, now 95.5
+        # from_hwm = (88 - 95.5) / 88 = -0.0852 > -0.06 trailing threshold
+        # Actually 95.5 - 88 = 7.5, 7.5/88 = 8.5% rally from best → triggers -6% trail
+        result = engine.check_position('XLK', 100.0, 95.5, 88.0, direction='short')
         assert result['action'] == 'exit'
         assert 'trailing_stop' in result['reason']
 
+    def test_short_trailing_not_triggered(self, engine):
+        # Short at 100, best price = 88, current = 90
+        # from_hwm = (88 - 90) / 88 = -0.023 > -0.06 → no trigger
+        result = engine.check_position('XLK', 100.0, 90.0, 88.0, direction='short')
+        assert result['action'] == 'ok'
+
     def test_short_soft_warn(self, engine):
-        # Short at 100, price rises to 105 → -5% loss (> -7% hard, but < -4% soft)
-        result = engine.check_position('XLK', 100.0, 105.0, 98.0, direction='short')
+        # Short at 100, price rises to 103 → -3% loss.
+        # HWM=100 (never profitable) so trailing doesn't fire.
+        # -3% is inside hard stop (-4%) but past soft warn (-2.5%) → reduce.
+        result = engine.check_position('XLK', 100.0, 103.0, 100.0, direction='short')
         assert result['action'] == 'reduce'
         assert 'soft_warn' in result['reason']
 
     def test_short_custom_config(self, redis):
-        redis.hset('config:risk', 'short_stop_loss', '-0.04')
+        redis.hset('config:risk', 'short_stop_loss', '-0.02')
         eng = StopLossEngine(redis_client=redis)
-        # Short at 100, price rises to 105 → -5% loss, custom -4% threshold
-        result = eng.check_position('XLK', 100.0, 105.0, 98.0, direction='short')
+        # Short at 100, price rises to 103 → -3% loss exceeds custom -2% threshold
+        result = eng.check_position('XLK', 100.0, 103.0, 98.0, direction='short')
         assert result['action'] == 'exit'
 
     def test_scan_with_mixed_directions(self, engine):
@@ -183,7 +199,7 @@ class TestShortPositionStops:
              'status': 'open', 'direction': 'short'},
         ]
         # XLK: long, current 93 → -7% from entry → hard stop (long -5%)
-        # XLE: short at 50, current 48 → profit (entry-current)/entry = 4%
+        # XLE: short at 50, LWM=48, current 48 → profit 4%, no stop
         prices = {'XLK': 93, 'XLE': 48}
         result = engine.scan_all_positions(positions, prices)
         assert len(result['exits']) == 1
