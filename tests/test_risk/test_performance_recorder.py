@@ -131,13 +131,15 @@ class TestPerformanceRecorder:
         assert result['etf']['sharpe_30d'] is None
 
     def test_compute_sharpe_uses_sample_variance(self):
-        """Sharpe denominator must use n-1 (sample std), not n (population std)."""
+        """Sharpe denominator must use n-1 (sample std), not n (population std).
+        Sharpe must subtract the daily risk-free rate (excess returns)."""
         import math
         returns = [0.01, -0.005, 0.02, -0.01, 0.015, 0.0]  # 6 observations
+        rf_daily = 0.045 / 252  # default annual rate / trading days
         n = len(returns)
         mean = sum(returns) / n
         sample_std = math.sqrt(sum((r - mean) ** 2 for r in returns) / (n - 1))
-        expected_sharpe = (mean / sample_std) * math.sqrt(252)
+        expected_sharpe = ((mean - rf_daily) / sample_std) * math.sqrt(252)
 
         result = PerformanceRecorder._compute_sharpe(returns)
         assert result is not None
