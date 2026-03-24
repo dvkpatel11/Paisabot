@@ -163,6 +163,200 @@ window.debounce = function(fn, wait) {
   return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
 };
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   PaisaChart — lifecycle wrapper for Plotly, Lightweight Charts, and Chart.js
+   Usage:
+     const chart = new PaisaChart('my-div', 'plotly');
+     chart.plot(traces, layoutOverrides);   // first render
+     chart.react(traces);                   // data update (no full redraw)
+     chart.lwc(options);                    // for LWC type
+     // auto-resizes via ResizeObserver
+     chart.destroy();                       // cleanup
+   ═══════════════════════════════════════════════════════════════════════════ */
+class PaisaChart {
+  /**
+   * @param {string|HTMLElement} container  - id string or DOM element
+   * @param {'plotly'|'lwc'|'chartjs'}  type
+   */
+  constructor(container, type = 'plotly') {
+    this.el   = typeof container === 'string' ? document.getElementById(container) : container;
+    this.type = type;
+    this._instance        = null;
+    this._resizeObserver  = null;
+  }
+
+  /* ── Plotly ────────────────────────────────────────────────────────────── */
+
+  /** Full render (first paint or major structural change). */
+  plot(traces, layoutOverrides = {}, configOverrides = {}) {
+    if (!this.el) return Promise.resolve();
+    const layout = plotlyTheme(layoutOverrides);
+    const config = Object.assign({
+      responsive:  true,
+      displaylogo: false,
+      modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'],
+    }, configOverrides);
+    return Plotly.newPlot(this.el, traces, layout, config)
+      .then(() => this._attachResize());
+  }
+
+  /**
+   * Efficient data-only update — keeps zoom/pan state.
+   * Prefer this over plot() for live updates.
+   */
+  react(traces, layoutOverrides = {}) {
+    if (!this.el) return Promise.resolve();
+    return Plotly.react(this.el, traces, plotlyTheme(layoutOverrides));
+  }
+
+  /** Extend an existing trace by index (streaming append). */
+  extend(traceUpdate, traceIndices, maxPoints) {
+    if (!this.el) return;
+    Plotly.extendTraces(this.el, traceUpdate, traceIndices, maxPoints);
+  }
+
+  /* ── Lightweight Charts ────────────────────────────────────────────────── */
+
+  /**
+   * Create a Lightweight Charts instance and return it for series setup.
+   * @param {object} options - merged onto lwcTheme()
+   * @returns {LightweightCharts.IChartApi}
+   */
+  lwc(options = {}) {
+    if (!this.el) return null;
+    this._instance = LightweightCharts.createChart(
+      this.el,
+      Object.assign(lwcTheme(), { width: this.el.clientWidth, height: this.el.clientHeight || 240 }, options)
+    );
+    this._attachResize();
+    return this._instance;
+  }
+
+  /* ── Chart.js ──────────────────────────────────────────────────────────── */
+
+  /**
+   * Create a Chart.js instance.
+   * @param {string} chartType - 'bar'|'doughnut'|'line'|etc.
+   * @param {object} data      - Chart.js data object
+   * @param {object} optOverrides - merged onto chartjsTheme
+   * @returns {Chart}
+   */
+  chartjs(chartType, data, optOverrides = {}) {
+    if (!this.el) return null;
+    const ctx = this.el.getContext ? this.el : this.el.querySelector('canvas');
+    const options = Object.assign({}, chartjsTheme, optOverrides);
+    this._instance = new Chart(ctx, { type: chartType, data, options });
+    return this._instance;
+  }
+
+  /* ── Shared ────────────────────────────────────────────────────────────── */
+
+  /** Force a resize (call from layout changes or manually). */
+  resize() {
+    if (!this.el) return;
+    if (this.type === 'plotly') {
+      Plotly.Plots.resize(this.el);
+    } else if (this.type === 'lwc' && this._instance) {
+      this._instance.applyOptions({ width: this.el.clientWidth });
+    } else if (this.type === 'chartjs' && this._instance) {
+      this._instance.resize();
+    }
+  }
+
+  /** Detach observers and purge underlying chart instance. */
+  destroy() {
+    if (this._resizeObserver) {
+      this._resizeObserver.disconnect();
+      this._resizeObserver = null;
+    }
+    if (this.type === 'plotly' && this.el) {
+      Plotly.purge(this.el);
+    } else if (this.type === 'lwc' && this._instance) {
+      this._instance.remove();
+    } else if (this.type === 'chartjs' && this._instance) {
+      this._instance.destroy();
+    }
+    this._instance = null;
+  }
+
+  _attachResize() {
+    if (this._resizeObserver || !window.ResizeObserver) return;
+    this._resizeObserver = new ResizeObserver(debounce(() => this.resize(), 150));
+    this._resizeObserver.observe(this.el);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PaisaTable — lifecycle wrapper for Tabulator
+   Usage:
+     const tbl = new PaisaTable('my-div', columns, { height: 400 });
+     tbl.init(initialData);
+     tbl.setData(newRows);         // full replace
+     tbl.upsert(rows, 'symbol');   // add or update by key, flashes changed rows
+     tbl.destroy();
+   ═══════════════════════════════════════════════════════════════════════════ */
+class PaisaTable {
+  /**
+   * @param {string|HTMLElement} container
+   * @param {Array}  columns  - Tabulator column definitions
+   * @param {object} options  - merged onto tabulatorDefaults
+   */
+  constructor(container, columns, options = {}) {
+    this.el       = typeof container === 'string' ? document.getElementById(container) : container;
+    this._columns = columns;
+    this._options = options;
+    this._table   = null;
+  }
+
+  /** Initialise Tabulator (call once after DOM is ready). */
+  init(initialData = []) {
+    if (!this.el) return this;
+    this._table = new Tabulator(this.el, Object.assign({}, tabulatorDefaults, {
+      columns: this._columns,
+      data:    initialData,
+    }, this._options));
+    return this;
+  }
+
+  /** Full data replace (preserves sort/filter state). */
+  setData(data) {
+    this._table?.setData(data);
+  }
+
+  /**
+   * Upsert rows by a key field — updates existing rows and flashes them,
+   * prepends new rows. Avoids full re-render for streaming updates.
+   * @param {Array}  rows - array of row objects
+   * @param {string} key  - field name used as unique identifier
+   */
+  upsert(rows, key = 'id') {
+    if (!this._table) return;
+    rows.forEach(row => {
+      const existing = this._table.getRow(row[key]);
+      if (existing) {
+        existing.update(row);
+        flashRow(existing.getElement());
+      } else {
+        this._table.addRow(row, true);  // prepend
+      }
+    });
+  }
+
+  /** Scroll to the top of the table. */
+  scrollTop() {
+    this._table?.scrollToRow(this._table.getRows()[0], 'top', false);
+  }
+
+  /** Destroy Tabulator instance and free DOM. */
+  destroy() {
+    this._table?.destroy();
+    this._table = null;
+  }
+
+  /** Expose the raw Tabulator instance for advanced operations. */
+  get raw() { return this._table; }
+}
+
 /* ── Paisa — high-level chart & UI helpers ───────────────────────────────── */
 window.Paisa = {
 
@@ -210,3 +404,7 @@ window.Paisa = {
     return 'regime-' + (regime || 'consolidation').toLowerCase().replace(/[^a-z_]/g, '');
   },
 };
+
+/* ── Expose manager classes globally ─────────────────────────────────────── */
+window.PaisaChart = PaisaChart;
+window.PaisaTable = PaisaTable;

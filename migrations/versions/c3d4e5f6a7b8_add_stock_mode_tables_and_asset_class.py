@@ -148,8 +148,9 @@ def upgrade() -> None:
         'account_id', sa.Integer(), sa.ForeignKey('accounts.id'), nullable=True,
     ))
 
-    # performance_metrics — drop old unique on date, add composite
-    op.drop_constraint('performance_metrics_date_key', 'performance_metrics', type_='unique')
+    # performance_metrics — drop old unique index on date (created as an index,
+    # not a named constraint, in the initial schema migration), add composite
+    op.drop_index('ix_performance_metrics_date', table_name='performance_metrics')
     op.add_column('performance_metrics', sa.Column(
         'asset_class', sa.String(10), nullable=False, server_default='etf',
     ))
@@ -168,7 +169,7 @@ def downgrade() -> None:
     op.drop_constraint('uq_perf_date_asset_class', 'performance_metrics', type_='unique')
     op.drop_column('performance_metrics', 'account_id')
     op.drop_column('performance_metrics', 'asset_class')
-    op.create_unique_constraint('performance_metrics_date_key', 'performance_metrics', ['date'])
+    op.create_index('ix_performance_metrics_date', 'performance_metrics', ['date'], unique=True)
 
     # ── positions ────────────────────────────────────────────────
     op.drop_column('positions', 'account_id')

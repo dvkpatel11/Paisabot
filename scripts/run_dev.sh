@@ -182,24 +182,25 @@ info "Celery beat running (PID $BEAT_PID)"
 # ── Flask dev server (foreground) ────────────────────────────────
 info "Starting Flask dev server on http://localhost:5000"
 echo "────────────────────────────────────────────────────"
-FLASK_CONFIG=development python wsgi.py &
+FLASK_CONFIG=development WERKZEUG_RUN_MAIN=true python wsgi.py &
 FLASK_PID=$!
 
-# Wait up to 15s for Flask to accept connections
+# Wait up to 30s for Flask to accept connections
 echo -n "  Waiting for Flask..."
-for i in $(seq 1 15); do
+for i in $(seq 1 30); do
     if curl -s http://localhost:5000/api/health >/dev/null 2>&1; then
         echo " ready"
         info "Server is up — http://localhost:5000"
         break
     fi
-    if [ "$i" -eq 15 ]; then
+    if [ "$i" -eq 30 ]; then
         echo ""
         warn "Flask health check timed out — server may still be starting"
     fi
     sleep 1
     echo -n "."
 done
+
 
 # Bring Flask to foreground so the script blocks until Ctrl-C
 wait "$FLASK_PID"

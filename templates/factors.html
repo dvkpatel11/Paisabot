@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+{% block title %}Factors - Paisabot{% endblock %}
+
+{% block content %}
+<div class="page-header" style="display:flex;align-items:center;justify-content:space-between">
+  <h1>Factor & Signal Explorer</h1>
+  <div style="display:flex;gap:8px;align-items:center">
+    <button class="btn" id="btn-compute" onclick="triggerCompute()">Compute Factors</button>
+    <span class="text-muted" id="compute-status" style="font-size:12px"></span>
+  </div>
+</div>
+
+<!-- Signal Ranking -->
+<div class="grid grid-3">
+  <div class="panel panel-full">
+    <div class="panel-header"><h2 class="text-green">LONG</h2></div>
+    <div id="long-signals"></div>
+  </div>
+  <div class="panel panel-full">
+    <div class="panel-header"><h2 class="text-yellow">NEUTRAL</h2></div>
+    <div id="neutral-signals"></div>
+  </div>
+  <div class="panel panel-full">
+    <div class="panel-header"><h2 class="text-red">AVOID</h2></div>
+    <div id="avoid-signals"></div>
+  </div>
+</div>
+
+<!-- Factor Heatmap -->
+<div class="panel panel-full">
+  <div class="panel-header">
+    <h2>Factor Scores Heatmap</h2>
+  </div>
+  <div id="heatmap-chart" style="height:400px"><div class="shimmer" style="height:100%"></div></div>
+</div>
+
+<!-- Per-Symbol Factor History -->
+<div class="panel panel-full">
+  <div class="panel-header" style="flex-wrap:wrap;gap:8px">
+    <h2>Factor History</h2>
+    <div style="display:flex;gap:12px;align-items:center">
+      <select id="factor-symbol-select" class="select-input">
+        <option value="">Select ETF...</option>
+      </select>
+      <div class="range-bar" id="factor-range-bar">
+        <button class="range-btn" data-days="14">2W</button>
+        <button class="range-btn active" data-days="60">2M</button>
+        <button class="range-btn" data-days="90">3M</button>
+        <button class="range-btn" data-days="180">6M</button>
+      </div>
+    </div>
+  </div>
+  <div class="factor-toggles" id="factor-toggles"></div>
+  <div id="factor-history-chart" style="height:350px"></div>
+</div>
+
+<!-- Sentiment Feed -->
+<div class="panel panel-full">
+  <div class="panel-header">
+    <h2>Sentiment Feed</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="sentiment-symbol-filter" class="select-input" style="width:120px">
+        <option value="">All</option>
+      </select>
+      <button class="panel-collapse-btn" id="sentiment-toggle" onclick="toggleSentiment()">&#9660;</button>
+    </div>
+  </div>
+  <div id="sentiment-feed" class="sentiment-feed"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ── Factor config ───────────────────────────────────────────────
+var ALL_FACTORS = [
+  {key: 'trend',       label: 'Trend',       color: '#3fb950', on: true},
+  {key: 'volatility',  label: 'Volatility',  color: '#f85149', on: true},
+  {key: 'sentiment',   label: 'Sentiment',   color: '#d29922', on: true},
+  {key: 'breadth',     label: 'Breadth',     color: '#58a6ff', on: true},
+  {key: 'liquidity',   label: 'Liquidity',   color: '#39d2c0', on: true},
+  {key: 'correlation', label: 'Correlation', color: '#bc8cff', on: false},
+  {key: 'slippage',    label: 'Slippage',    color: '#e3b341', on: false},
+];
+var HEATMAP_FACTORS = ['trend', 'volatility', 'sentiment', 'breadth', 'correlation', 'liquidity', 'slippage'];
+var _factorDays = 60;
+
+document.addEventListener('DOMContentLoaded', function() {
+  var signalCols = [
+    {title: 'Symbol', field: 'symbol', width: 80, formatter: PaisaTables.symbolFormatter},
+    {title: 'Score', field: 'composite_score', formatter: PaisaTables.scoreFormatter},
+    {title: 'Regime', field: 'regime', formatter: PaisaTables.regimeFormatter},
+  ];
+
+  PaisaTables.create('long-signals', signalCols, {placeholder: 'No long signals'});
+  PaisaTables.create('neutral-signals', signalCols, {placeholder: 'No neutral signals'});
+  PaisaTables.create('avoid-signals', signalCols, {placeholder: 'No avoid signals'});
+
+  // Load signals
+  PaisaUtils.fetchJSON('/api/signals').then(function(data) {
+    PaisaTables.setData('long-signals', data.long || []);
+    PaisaTables.setData('neutral-signals', data.neutral || []);
+    PaisaTables.setData('avoid-signals', data.avoid || []);
+  });
+
+  // Populate symbol dropdowns from universe
+  PaisaUtils.fetchJSON('/api/universe').then(function(etfs) {
+    var select = document.getElementById('factor-symbol-select');
+    var sentSelect = document.getElementById('sentiment-symbol-filter');
+    etfs.forEach(function(e) {
+      var opt = document.createElement('option');
+      opt.value = e.symbol; opt.textContent = e.symbol + ' — ' + e.name;
+      select.appendChild(opt);
+      var opt2 = document.createElement('option');
+      opt2.value = e.symbol; opt2.textContent = e.symbol;
+      sentSelect.appendChild(opt2);
+    });
+  });
+
+  // ── Heatmap ─────────────────────────────────────────────────
+  PaisaUtils.fetchJSON('/api/scores').then(renderHeatmap);
+
+  // ── Factor toggles ──────────────────────────────────────────
+  var togglesEl = document.getElementById('factor-toggles');
+  ALL_FACTORS.forEach(function(f) {
+    var label = document.createElement('label');
+    label.className = 'factor-toggle';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = f.on; cb.dataset.factor = f.key;
+    cb.addEventListener('change', function() { f.on = this.checked; loadFactorHistory(); });
+    var span = document.createElement('span');
+    span.textContent = f.label; span.style.color = f.color;
+    label.appendChild(cb); label.appendChild(span);
+    togglesEl.appendChild(label);
+  });
+
+  // ── Factor history chart ────────────────────────────────────
+  document.getElementById('factor-symbol-select').addEventListener('change', loadFactorHistory);
+
+  // Date range buttons
+  document.getElementById('factor-range-bar').addEventListener('click', function(e) {
+    var btn = e.target.closest('.range-btn');
+    if (!btn) return;
+    this.querySelectorAll('.range-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    _factorDays = parseInt(btn.dataset.days);
+    loadFactorHistory();
+  });
+
+  // ── Sentiment feed ──────────────────────────────────────────
+  loadSentimentFeed();
+  document.getElementById('sentiment-symbol-filter').addEventListener('change', loadSentimentFeed);
+
+  // ── WebSocket live updates ──────────────────────────────────
+  PaisaSocket.on('factor_scores', function() {
+    PaisaUtils.fetchJSON('/api/scores').then(renderHeatmap);
+  });
+
+  PaisaSocket.on('signals', function(data) {
+    if (data.long !== undefined) {
+      PaisaTables.setData('long-signals',    data.long    || []);
+      PaisaTables.setData('neutral-signals', data.neutral || []);
+      PaisaTables.setData('avoid-signals',   data.avoid   || []);
+    } else {
+      var long = [], neutral = [], avoid = [];
+      Object.entries(data).forEach(function(pair) {
+        var sym = pair[0], s = pair[1];
+        var row = {symbol: sym, composite_score: s.composite_score, regime: s.regime};
+        if (s.signal_type === 'long')       long.push(row);
+        else if (s.signal_type === 'avoid') avoid.push(row);
+        else                                neutral.push(row);
+      });
+      PaisaTables.setData('long-signals', long);
+      PaisaTables.setData('neutral-signals', neutral);
+      PaisaTables.setData('avoid-signals', avoid);
+    }
+  });
+});
+
+function renderHeatmap(scores) {
+  var symbols = Object.keys(scores).sort();
+  var el = document.getElementById('heatmap-chart');
+
+  if (symbols.length === 0) {
+    el.innerHTML =
+      '<div class="empty-state">No factor scores yet. Click <strong>Compute Factors</strong> above.</div>';
+    return;
+  }
+
+  // Build customdata for sentiment tooltip
+  var z = HEATMAP_FACTORS.map(function(f) {
+    return symbols.map(function(s) { return scores[s] ? scores[s][f] || 0 : 0; });
+  });
+
+  var customtext = HEATMAP_FACTORS.map(function(f) {
+    return symbols.map(function(s) {
+      var val = scores[s] ? (scores[s][f] || 0) : 0;
+      var extra = '';
+      if (f === 'sentiment') {
+        extra = '<br>Components: News 35% | Reddit 25% | Options 25% | Flow 15%';
+      }
+      return s + ' / ' + f + ': ' + val.toFixed(3) + extra;
+    });
+  });
+
+  PaisaCharts.heatmap('heatmap-chart', {
+    z: z, x: symbols, y: HEATMAP_FACTORS, title: 'Factor Scores (0-1)',
+  });
+
+  // Apply custom hovertemplate after plot is created
+  var plotEl = document.getElementById('heatmap-chart');
+  if (plotEl.data && plotEl.data[0]) {
+    Plotly.restyle('heatmap-chart', {
+      customdata: [customtext],
+      hovertemplate: '%{customdata}<extra></extra>',
+    });
+  }
+}
+
+function loadFactorHistory() {
+  var sym = document.getElementById('factor-symbol-select').value;
+  if (!sym) return;
+
+  PaisaUtils.fetchJSON('/api/factors/' + sym + '?days=' + _factorDays).then(function(data) {
+    var factors = data.factors;
+    var traces = ALL_FACTORS.filter(function(f) { return f.on; }).map(function(f) {
+      return {
+        x: factors.dates, y: factors[f.key], name: f.label,
+        type: 'scatter', mode: 'lines', line: {color: f.color},
+      };
+    });
+    PaisaCharts.timeSeries('factor-history-chart', traces, sym + ' Factor History (' + _factorDays + 'd)');
+  });
+}
+
+function loadSentimentFeed() {
+  var sym = document.getElementById('sentiment-symbol-filter').value;
+  var url = '/api/sentiment/feed?limit=30' + (sym ? '&symbol=' + sym : '');
+
+  PaisaUtils.fetchJSON(url).then(function(items) {
+    var el = document.getElementById('sentiment-feed');
+    if (!items.length) {
+      el.innerHTML = '<div class="empty-state">No sentiment data yet.</div>';
+      return;
+    }
+
+    el.innerHTML = items.map(function(item) {
+      var score = item.raw_score;
+      var scoreColor = score == null ? 'var(--text-muted)' : score >= 0.1 ? 'var(--green)' : score <= -0.1 ? 'var(--red)' : 'var(--yellow)';
+      var barWidth = score != null ? Math.abs(score) * 50 : 0;
+      var barLeft = score != null ? (score >= 0 ? '50%' : (50 - barWidth) + '%') : '50%';
+      var barColor = score != null ? (score >= 0 ? 'var(--green)' : 'var(--red)') : 'var(--text-muted)';
+      var scoreText = score != null ? (score >= 0 ? '+' : '') + score.toFixed(3) : '--';
+      var timeText = item.timestamp ? PaisaUtils.formatTime(item.timestamp) : '--';
+
+      return '<div class="sentiment-item">' +
+        '<span class="sentiment-source">' + (item.source || '--') + '</span>' +
+        '<span class="sentiment-headline">' + (item.headline || '') +
+          ' <span style="color:var(--text-muted);font-size:11px">[' + item.symbol + ']</span></span>' +
+        '<div class="sentiment-bar"><div class="sentiment-bar-fill" style="left:' + barLeft + ';width:' + barWidth + '%;background:' + barColor + '"></div></div>' +
+        '<span class="sentiment-score" style="color:' + scoreColor + '">' + scoreText + '</span>' +
+        '<span class="badge-sm" style="font-size:9px;color:var(--text-muted)">' + (item.model || '') + '</span>' +
+        '<span class="sentiment-time">' + timeText + '</span>' +
+        '</div>';
+    }).join('');
+  }).catch(function() {});
+}
+
+function toggleSentiment() {
+  var feed = document.getElementById('sentiment-feed');
+  var btn = document.getElementById('sentiment-toggle');
+  var hidden = feed.style.display === 'none';
+  feed.style.display = hidden ? '' : 'none';
+  btn.classList.toggle('collapsed', !hidden);
+}
+
+function triggerCompute() {
+  var btn = document.getElementById('btn-compute');
+  var status = document.getElementById('compute-status');
+  btn.disabled = true;
+  btn.textContent = 'Computing...';
+  status.textContent = 'Computing factors and signals...';
+
+  PaisaUtils.fetchJSON('/api/data/compute', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sync: true}),
+  })
+    .then(function(data) {
+      if (data.error) {
+        status.textContent = 'Error: ' + data.error;
+      } else {
+        status.textContent = 'Complete — ' + (data.symbols || 0) + ' symbols, ' + (data.signals || 0) + ' signals. Refreshing...';
+        setTimeout(function() { location.reload(); }, 2000);
+      }
+      btn.disabled = false;
+      btn.textContent = 'Compute Factors';
+    })
+    .catch(function() {
+      status.textContent = 'Computation failed — check server logs';
+      btn.disabled = false;
+      btn.textContent = 'Compute Factors';
+    });
+}
+</script>
+{% endblock %}
