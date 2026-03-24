@@ -129,22 +129,14 @@ class StopLossEngine:
         from_entry = (current_price - entry_price) / entry_price
         from_hwm = (current_price - high_watermark) / high_watermark
 
-        # For short positions, loss = price going UP, so invert the ratio.
-        if direction == 'short':
-            from_entry = (entry_price - current_price) / entry_price
-            from_hwm = (high_watermark - current_price) / high_watermark
-        else:
-            from_entry = (current_price - entry_price) / entry_price
-            from_hwm = (current_price - high_watermark) / high_watermark
-
         # 1. Hard stop
-        if from_entry < thresholds['hard']:
+        if from_entry < self.hard_stop_pct:
             self._log.warning(
                 'hard_stop_triggered',
                 symbol=symbol,
                 direction='long',
                 from_entry=round(from_entry, 4),
-                threshold=thresholds['hard'],
+                threshold=self.hard_stop_pct,
             )
             return self._result(
                 'exit',
@@ -153,14 +145,14 @@ class StopLossEngine:
             )
 
         # 2. Trailing stop
-        if from_hwm < thresholds['trailing']:
+        if from_hwm < self.trailing_stop_pct:
             self._log.warning(
                 'trailing_stop_triggered',
                 symbol=symbol,
                 direction='long',
                 from_hwm=round(from_hwm, 4),
                 hwm=high_watermark,
-                threshold=thresholds['trailing'],
+                threshold=self.trailing_stop_pct,
             )
             return self._result(
                 'exit',
@@ -169,7 +161,7 @@ class StopLossEngine:
             )
 
         # 3. Soft warning → reduce 50%
-        if from_entry < thresholds['soft']:
+        if from_entry < self.soft_warn_pct:
             self._log.info(
                 'soft_warning',
                 symbol=symbol,
