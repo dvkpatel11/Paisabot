@@ -64,6 +64,21 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     'liquidity':  0.15,
 }
 
+# Stock composite weights — fundamentals-heavy, no breadth.
+STOCK_DEFAULT_WEIGHTS: dict[str, float] = {
+    'trend':        0.20,
+    'volatility':   0.15,
+    'sentiment':    0.15,
+    'liquidity':    0.10,
+    'fundamentals': 0.25,
+    'earnings':     0.15,
+}
+
+DEFAULT_WEIGHTS_BY_CLASS: dict[str, dict[str, float]] = {
+    'etf':   DEFAULT_WEIGHTS,
+    'stock': STOCK_DEFAULT_WEIGHTS,
+}
+
 # Static sector map for the ETF universe (used for sector-exposure capping).
 SECTOR_MAP: dict[str, str] = {
     'SPY':  'broad',          'QQQ':  'tech',          'DIA':  'broad',
@@ -116,8 +131,10 @@ class VectorizedBacktester:
         trailing_stop:        float = -0.08,    # trailing stop from HWM per position
         turnover_limit:       float = 0.50,     # max one-way turnover per rebalance
         max_sector_exposure:  float = 0.40,     # max aggregate weight per sector
+        asset_class:          str   = 'etf',    # 'etf' or 'stock'
     ):
         self._db                 = db_session
+        self._asset_class        = asset_class
         self.initial_capital     = initial_capital
         self.rebalance_freq      = rebalance_freq
         self.max_positions       = max_positions
@@ -131,14 +148,16 @@ class VectorizedBacktester:
         self.turnover_limit      = turnover_limit
         self.max_sector_exposure = max_sector_exposure
 
-        self.weights = (weights or DEFAULT_WEIGHTS).copy()
+        class_defaults = DEFAULT_WEIGHTS_BY_CLASS.get(asset_class, DEFAULT_WEIGHTS)
+        self.weights = (weights or class_defaults).copy()
         total = sum(self.weights.values())
         if total > 0:
             self.weights = {k: v / total for k, v in self.weights.items()}
 
-        # ETF metadata populated lazily at first run() call
-        self._adv_usd:         dict[str, float] = {}
-        self._inception_dates: dict[str, date]  = {}
+        # Metadata populated lazily at first run() call
+        self._adv_usd:          dict[str, float] = {}
+        self._inception_dates:  dict[str, date]  = {}
+        self._stock_sector_map: dict[str, str]   = {}
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -149,7 +168,7 @@ class VectorizedBacktester:
         symbols:    list[str] | None = None,
     ) -> BacktestResult:
         """Run backtest over the given date range."""
-        self._load_etf_metadata()
+        self._load_metadata()
         prices = self._load_prices(start_date, end_date, symbols)
         if prices.empty or len(prices) < 20:
             return self._empty_result()
@@ -298,7 +317,7 @@ class VectorizedBacktester:
         cumulative_returns = (1 + daily_returns).cumprod() - 1
         peak               = equity.cummax()
         drawdown           = (equity - peak) / peak
-        spy_returns        = self._load_spy_returns(prices)
+        spy_returns        = self._load_benchmark_returns(prices)
 
         metrics = self._compute_metrics(
             equity, daily_returns, drawdown, trade_log, spy_returns,
@@ -344,9 +363,11 @@ class VectorizedBacktester:
         self, weights: dict[str, float],
     ) -> dict[str, float]:
         """Scale back any sector whose aggregate weight exceeds max_sector_exposure."""
+        smap = self._stock_sector_map if self._asset_class == 'stock' else SECTOR_MAP
+
         sector_totals: dict[str, float] = {}
         for sym, w in weights.items():
-            sec = SECTOR_MAP.get(sym, 'other')
+            sec = smap.get(sym, 'other')
             sector_totals[sec] = sector_totals.get(sec, 0.0) + w
 
         overweight = {
@@ -360,7 +381,7 @@ class VectorizedBacktester:
         for sec, total in overweight.items():
             scale = self.max_sector_exposure / total
             for sym in list(adjusted):
-                if SECTOR_MAP.get(sym, 'other') == sec:
+                if smap.get(sym, 'other') == sec:
                     adjusted[sym] *= scale
         return adjusted
 
@@ -464,15 +485,28 @@ class VectorizedBacktester:
             # Breadth proxy: fraction of recent daily returns that are positive
             breadth = float((ret.tail(20) > 0).mean()) if len(ret) >= 5 else 0.5
 
-            # Liquidity proxy: constant for liquid ETFs
+            # Liquidity proxy: constant for liquid ETFs/stocks
             liquidity = 0.8
 
+            # Fundamentals proxy: inverse of vol (stable price ≈ strong fundamentals)
+            fundamentals = max(0.0, min(1.0, 1.0 - (vol - 0.10) / 0.50))
+
+            # Earnings proxy: 60-day momentum (longer-term price appreciation)
+            n_back_60 = min(60, len(col))
+            mom_60 = (
+                (col.iloc[-1] / col.iloc[-n_back_60] - 1)
+                if col.iloc[-n_back_60] > 0 else 0.0
+            )
+            earnings = max(0.0, min(1.0, (mom_60 + 0.15) / 0.30))
+
             factor_scores = {
-                'trend':      trend,
-                'volatility': volatility,
-                'sentiment':  sentiment,
-                'breadth':    breadth,
-                'liquidity':  liquidity,
+                'trend':        trend,
+                'volatility':   volatility,
+                'sentiment':    sentiment,
+                'breadth':      breadth,
+                'liquidity':    liquidity,
+                'fundamentals': fundamentals,
+                'earnings':     earnings,
             }
 
             composite = sum(
@@ -485,9 +519,16 @@ class VectorizedBacktester:
 
     # ── Benchmark ─────────────────────────────────────────────────────────────
 
-    def _load_spy_returns(self, prices: pd.DataFrame) -> pd.Series | None:
-        """Extract SPY daily returns from the already-loaded price matrix."""
-        if 'SPY' in prices.columns:
+    def _load_benchmark_returns(self, prices: pd.DataFrame) -> pd.Series | None:
+        """Extract benchmark daily returns from the already-loaded price matrix.
+
+        Uses SPY for ETF backtests and QQQ for stock backtests.
+        """
+        benchmark = 'SPY' if self._asset_class == 'etf' else 'QQQ'
+        if benchmark in prices.columns:
+            return prices[benchmark].pct_change().fillna(0)
+        # Fallback: try SPY for stocks if QQQ not available
+        if self._asset_class == 'stock' and 'SPY' in prices.columns:
             return prices['SPY'].pct_change().fillna(0)
         return None
 
@@ -572,6 +613,13 @@ class VectorizedBacktester:
 
     # ── Data loading ──────────────────────────────────────────────────────────
 
+    def _load_metadata(self) -> None:
+        """Load asset metadata (ADV, inception dates, sector map) once per run."""
+        if self._asset_class == 'stock':
+            self._load_stock_metadata()
+        else:
+            self._load_etf_metadata()
+
     def _load_etf_metadata(self) -> None:
         """Load ADV and inception dates from ETFUniverse (once per run)."""
         if self._adv_usd and self._inception_dates:
@@ -583,20 +631,36 @@ class VectorizedBacktester:
             if e.inception_date is not None:
                 self._inception_dates[e.symbol] = e.inception_date
 
+    def _load_stock_metadata(self) -> None:
+        """Load ADV and sector map from StockUniverse (once per run)."""
+        if self._adv_usd:
+            return
+        from app.models.stock_universe import StockUniverse
+        for s in StockUniverse.query.filter_by(is_active=True).all():
+            if hasattr(s, 'avg_daily_volume') and s.avg_daily_volume is not None:
+                self._adv_usd[s.symbol] = float(s.avg_daily_volume)
+            if hasattr(s, 'sector') and s.sector:
+                self._stock_sector_map[s.symbol] = s.sector
+
     def _load_prices(
         self, start_date: date, end_date: date, symbols: list[str] | None,
     ) -> pd.DataFrame:
         """Load daily close prices from price_bars table.
 
-        Filters out ETFs whose inception_date > start_date to avoid
+        Filters out assets whose inception_date > start_date to avoid
         survivorship bias from newly-listed outperformers.
         """
         from app.models.price_bars import PriceBar
-        from app.models.etf_universe import ETFUniverse
 
         if symbols is None:
-            etfs    = ETFUniverse.query.filter_by(is_active=True).all()
-            symbols = [e.symbol for e in etfs]
+            if self._asset_class == 'stock':
+                from app.models.stock_universe import StockUniverse
+                rows = StockUniverse.query.filter_by(is_active=True).all()
+                symbols = [r.symbol for r in rows]
+            else:
+                from app.models.etf_universe import ETFUniverse
+                etfs = ETFUniverse.query.filter_by(is_active=True).all()
+                symbols = [e.symbol for e in etfs]
 
         eligible = []
         for sym in symbols:
@@ -616,6 +680,7 @@ class VectorizedBacktester:
         bars = PriceBar.query.filter(
             PriceBar.symbol.in_(symbols),
             PriceBar.timeframe == '1d',
+            PriceBar.asset_class == self._asset_class,
             PriceBar.timestamp >= lookback_start,
             PriceBar.timestamp <= end_date,
         ).all()

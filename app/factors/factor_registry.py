@@ -170,7 +170,7 @@ class FactorRegistry:
             return
 
         import json
-        prefix = f'{self._asset_class}:' if self._asset_class != 'etf' else ''
+        prefix = f'{self._asset_class}:'
 
         for symbol, scores in results.items():
             # Per-symbol composite cache (15min TTL)

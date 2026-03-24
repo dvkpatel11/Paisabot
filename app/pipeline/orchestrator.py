@@ -116,12 +116,29 @@ class PipelineOrchestrator:
             'current_drawdown': current_drawdown,
         }
 
+    # ── stage boundary validation ────────────────────────────────────
+
+    def _validate_asset_class(self, pipeline_data: dict, stage: str) -> None:
+        """Assert pipeline data asset_class matches orchestrator's.
+
+        Raises ValueError on mismatch — indicates a cross-wired pipeline
+        (e.g. ETF stage 1 output fed into stock stage 2).
+        """
+        data_ac = pipeline_data.get('asset_class')
+        if data_ac and data_ac != self._asset_class:
+            raise ValueError(
+                f'Pipeline asset_class mismatch at {stage}: '
+                f'orchestrator={self._asset_class}, data={data_ac}. '
+                f'This indicates a cross-wired pipeline.'
+            )
+
     # ── stage 2 ──────────────────────────────────────────────────────
 
     def portfolio(self, pipeline_data: dict) -> dict:
         """Stage 2: run portfolio construction, produce rebalance orders."""
         if pipeline_data.get('status') == 'stopped':
             return pipeline_data
+        self._validate_asset_class(pipeline_data, 'portfolio')
 
         self._log.info('stage_portfolio_start')
 
@@ -183,6 +200,7 @@ class PipelineOrchestrator:
         """Stage 3: run pre-trade risk gate on proposed orders."""
         if pipeline_data.get('status') == 'stopped':
             return pipeline_data
+        self._validate_asset_class(pipeline_data, 'risk_gate')
 
         self._log.info('stage_risk_gate_start', n_orders=len(pipeline_data['orders']))
 
@@ -236,6 +254,7 @@ class PipelineOrchestrator:
         """
         if pipeline_data.get('status') == 'stopped':
             return pipeline_data
+        self._validate_asset_class(pipeline_data, 'execute')
 
         approved = pipeline_data.get('approved', [])
         self._log.info('stage_execute_start', n_approved=len(approved))
@@ -276,6 +295,7 @@ class PipelineOrchestrator:
 
     def record(self, pipeline_data: dict) -> dict:
         """Stage 5: publish pipeline summary to Redis + dashboard."""
+        self._validate_asset_class(pipeline_data, 'record')
         self._log.info('stage_record_start')
 
         asset_class = pipeline_data.get('asset_class', self._asset_class)

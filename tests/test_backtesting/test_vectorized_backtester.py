@@ -28,7 +28,7 @@ def mock_db():
 def bt(mock_db):
     """Default backtester with DB mocked out."""
     inst = VectorizedBacktester(db_session=mock_db)
-    inst._load_etf_metadata = lambda: None
+    inst._load_metadata = lambda: None
     return inst
 
 
@@ -60,7 +60,7 @@ def synthetic_prices() -> pd.DataFrame:
 def bt_with_prices(mock_db, synthetic_prices):
     """Backtester with synthetic prices injected."""
     inst = VectorizedBacktester(db_session=mock_db, max_positions=3)
-    inst._load_etf_metadata = lambda: None
+    inst._load_metadata = lambda: None
     inst._load_prices = lambda *a, **kw: synthetic_prices
     return inst
 
@@ -406,11 +406,11 @@ class TestComputeMetrics:
         assert m == {}
 
 
-# ── _load_spy_returns ─────────────────────────────────────────────────────────
+# ── _load_benchmark_returns ─────────────────────────────────────────────────────────
 
 class TestLoadSpyReturns:
     def test_returns_series_when_spy_present(self, bt, synthetic_prices):
-        result = bt._load_spy_returns(synthetic_prices)
+        result = bt._load_benchmark_returns(synthetic_prices)
         assert result is not None
         assert 'SPY' not in result.name or True  # just verify it's a Series
         assert isinstance(result, pd.Series)
@@ -418,7 +418,7 @@ class TestLoadSpyReturns:
 
     def test_returns_none_when_spy_absent(self, bt):
         prices = pd.DataFrame({'QQQ': [1.0, 2.0, 3.0]})
-        assert bt._load_spy_returns(prices) is None
+        assert bt._load_benchmark_returns(prices) is None
 
 
 # ── end-to-end run() ──────────────────────────────────────────────────────────
@@ -452,14 +452,14 @@ class TestRun:
         prices = pd.DataFrame(data, index=dates)
 
         inst = VectorizedBacktester(mock_db, max_positions=3, use_factor_weights=True)
-        inst._load_etf_metadata = lambda: None
+        inst._load_metadata = lambda: None
         inst._load_prices       = lambda *a, **kw: prices
         result = inst.run(date(2023, 3, 1), date(2024, 1, 1))
         assert result.metrics.get('cagr', 0) > 0
 
     def test_empty_result_on_no_price_data(self, mock_db):
         inst = VectorizedBacktester(mock_db)
-        inst._load_etf_metadata = lambda: None
+        inst._load_metadata = lambda: None
         inst._load_prices       = lambda *a, **kw: pd.DataFrame()
         result = inst.run(date(2023, 1, 1), date(2023, 12, 31))
         assert 'error' in result.metrics
@@ -482,7 +482,7 @@ class TestRun:
         inst = VectorizedBacktester(
             mock_db, max_positions=2, max_drawdown_halt=-0.15,
         )
-        inst._load_etf_metadata = lambda: None
+        inst._load_metadata = lambda: None
         inst._load_prices       = lambda *a, **kw: prices
         result = inst.run(date(2023, 3, 1), date(2024, 1, 1))
 
@@ -531,7 +531,7 @@ class TestRun:
     def test_rebalance_freq_daily_produces_more_trades_than_weekly(self, mock_db, synthetic_prices):
         def make(freq: str) -> BacktestResult:
             inst = VectorizedBacktester(mock_db, rebalance_freq=freq, max_positions=3)
-            inst._load_etf_metadata = lambda: None
+            inst._load_metadata = lambda: None
             inst._load_prices       = lambda *a, **kw: synthetic_prices
             return inst.run(date(2023, 3, 1), date(2024, 1, 1))
 
@@ -542,7 +542,7 @@ class TestRun:
     def test_cash_buffer_reduces_invested_weight(self, mock_db, synthetic_prices):
         """With a 20 % cash buffer, invested fraction should stay ≤ 80 %."""
         inst = VectorizedBacktester(mock_db, max_positions=5, cash_buffer=0.20)
-        inst._load_etf_metadata = lambda: None
+        inst._load_metadata = lambda: None
         inst._load_prices       = lambda *a, **kw: synthetic_prices
         result = inst.run(date(2023, 3, 1), date(2024, 1, 1))
         # Just verify the run completes without error

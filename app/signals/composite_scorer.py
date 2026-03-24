@@ -90,14 +90,31 @@ class CompositeScorer:
                 raw = self._redis.hgetall(redis_key)
                 if raw:
                     loaded = {}
+                    unknown_keys = []
                     for k, v in raw.items():
                         key = k.decode() if isinstance(k, bytes) else k
                         val = v.decode() if isinstance(v, bytes) else v
                         factor = WEIGHT_KEY_MAP.get(key)
                         if factor and factor in defaults:
                             loaded[factor] = float(val)
+                        else:
+                            unknown_keys.append(key)
+                    if unknown_keys:
+                        self._log.warning(
+                            'unknown_weight_keys_in_redis',
+                            keys=unknown_keys,
+                            expected=list(WEIGHT_KEY_MAP.keys()),
+                            redis_key=redis_key,
+                        )
                     if loaded:
                         weights = loaded
+                else:
+                    self._log.info(
+                        'weights_using_defaults',
+                        redis_key=redis_key,
+                        asset_class=self._asset_class,
+                        detail=f'No weights found at {redis_key}, using hardcoded defaults',
+                    )
             except Exception as exc:
                 self._log.warning('weight_load_failed', error=str(exc))
 

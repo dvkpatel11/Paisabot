@@ -19,7 +19,7 @@ class Signal(db.Model):
     signal_type = db.Column(db.String(10))
     block_reason = db.Column(db.String(200))
     asset_class = db.Column(
-        db.String(10), nullable=False, default='etf', server_default='etf', index=True,
+        db.String(10), nullable=False, default='etf', server_default='etf',
     )  # 'etf' or 'stock'
     account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=True)
 

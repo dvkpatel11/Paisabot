@@ -12,10 +12,11 @@ class SignalFilter:
     liquidity shock, factor staleness.
     """
 
-    def __init__(self, redis_client=None, config_loader=None):
+    def __init__(self, redis_client=None, config_loader=None, asset_class: str = 'etf'):
         self._redis = redis_client
         self._config = config_loader
-        self._log = logger.bind(component='signal_filter')
+        self._asset_class = asset_class
+        self._log = logger.bind(component='signal_filter', asset_class=asset_class)
 
     def is_tradable(
         self,
@@ -116,8 +117,8 @@ class SignalFilter:
             return True  # no Redis = can't verify freshness → block
 
         try:
-            ttl = self._redis.ttl(f'scores:{symbol}')
-            # scores:{symbol} has 15min TTL; if key doesn't exist, data is stale
+            ttl = self._redis.ttl(f'{self._asset_class}:scores:{symbol}')
+            # {asset_class}:scores:{symbol} has 15min TTL; if key doesn't exist, data is stale
             if ttl is None or ttl == -2:  # -2 means key doesn't exist
                 return True
             return False

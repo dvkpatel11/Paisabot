@@ -11,10 +11,19 @@ logger = structlog.get_logger()
 class StopLossEngine:
     """Position-level stop-loss and trailing-stop scanner.
 
-    Stop-loss ladder (from risk_framework.md):
+    Direction-aware: long and short positions use independent,
+    configurable thresholds.
+
+    Long stop-loss ladder (default):
       - Hard stop:    -5% from entry  → immediate exit
       - Trailing stop: -8% from HWM   → immediate exit
-      - Soft warning:  -3% from entry  → reduce position 50%, monitor
+      - Soft warning:  -3% from entry  → reduce position 50%
+
+    Short stop-loss ladder (default — tighter because shorts
+    have unlimited theoretical loss):
+      - Hard stop:    -4% from entry  → immediate cover
+      - Trailing stop: -6% from LWM   → immediate cover
+      - Soft warning:  -2% from entry  → reduce position 50%
     """
 
     def __init__(self, redis_client, config_loader=None):
@@ -49,28 +58,8 @@ class StopLossEngine:
                 return float(raw.decode() if isinstance(raw, bytes) else raw)
         return default
 
-    def _get_thresholds(self, direction: str = 'long') -> dict[str, float]:
-        """Return stop-loss thresholds for the given direction.
+    # ── long thresholds ─────────────────────────────────────────────
 
-        Config keys:
-            long  → position_stop_loss, position_trailing_stop, position_soft_warn
-            short → short_stop_loss, short_trailing_stop, short_soft_warn
-        """
-        defaults = self._DEFAULTS.get(direction, self._DEFAULTS['long'])
-        if direction == 'short':
-            return {
-                'hard': self._threshold('short_stop_loss', defaults['position_stop_loss']),
-                'trailing': self._threshold('short_trailing_stop', defaults['position_trailing_stop']),
-                'soft': self._threshold('short_soft_warn', defaults['position_soft_warn']),
-            }
-        return {
-            'hard': self._threshold('position_stop_loss', defaults['position_stop_loss']),
-            'trailing': self._threshold('position_trailing_stop', defaults['position_trailing_stop']),
-            'soft': self._threshold('position_soft_warn', defaults['position_soft_warn']),
-        }
-
-    # Legacy properties for backward compatibility with tests / callers
-    # that don't pass direction.
     @property
     def hard_stop_pct(self) -> float:
         return self._threshold('position_stop_loss', -0.05)
@@ -81,8 +70,21 @@ class StopLossEngine:
 
     @property
     def soft_warn_pct(self) -> float:
-        """Soft warning at -3% from entry — reduce 50%."""
         return self._threshold('position_soft_warn', -0.03)
+
+    # ── short thresholds (tighter defaults) ─────────────────────────
+
+    @property
+    def short_hard_stop_pct(self) -> float:
+        return self._threshold('short_stop_loss', -0.04)
+
+    @property
+    def short_trailing_stop_pct(self) -> float:
+        return self._threshold('short_trailing_stop', -0.06)
+
+    @property
+    def short_soft_warn_pct(self) -> float:
+        return self._threshold('short_soft_warn', -0.02)
 
     # ── single-position check ───────────────────────────────────────
 
@@ -96,10 +98,13 @@ class StopLossEngine:
     ) -> dict:
         """Evaluate a single position against the stop-loss ladder.
 
-        For short positions the PnL direction is inverted: price going *up*
-        is a loss.  Thresholds are loaded from direction-specific config keys
-        (``short_stop_loss`` etc.) so longs and shorts can have independent
-        stop parameters.
+        Args:
+            symbol: ticker.
+            entry_price: position entry price.
+            current_price: latest market price.
+            high_watermark: for longs — highest price since entry (HWM).
+                            for shorts — lowest price since entry (LWM).
+            direction: 'long' or 'short'.
 
         Returns:
             dict with keys: action ('exit'|'reduce'|'ok'),
@@ -108,7 +113,20 @@ class StopLossEngine:
         if entry_price <= 0 or high_watermark <= 0:
             return self._result('ok', 'invalid_price', 0.0, 0.0)
 
-        thresholds = self._get_thresholds(direction)
+        if direction == 'short':
+            return self._check_short(symbol, entry_price, current_price, high_watermark)
+        return self._check_long(symbol, entry_price, current_price, high_watermark)
+
+    def _check_long(
+        self,
+        symbol: str,
+        entry_price: float,
+        current_price: float,
+        high_watermark: float,
+    ) -> dict:
+        """Long position: price dropping = loss."""
+        from_entry = (current_price - entry_price) / entry_price
+        from_hwm = (current_price - high_watermark) / high_watermark
 
         # For short positions, loss = price going UP, so invert the ratio.
         if direction == 'short':
@@ -123,7 +141,7 @@ class StopLossEngine:
             self._log.warning(
                 'hard_stop_triggered',
                 symbol=symbol,
-                direction=direction,
+                direction='long',
                 from_entry=round(from_entry, 4),
                 threshold=thresholds['hard'],
             )
@@ -138,7 +156,7 @@ class StopLossEngine:
             self._log.warning(
                 'trailing_stop_triggered',
                 symbol=symbol,
-                direction=direction,
+                direction='long',
                 from_hwm=round(from_hwm, 4),
                 hwm=high_watermark,
                 threshold=thresholds['trailing'],
@@ -154,7 +172,7 @@ class StopLossEngine:
             self._log.info(
                 'soft_warning',
                 symbol=symbol,
-                direction=direction,
+                direction='long',
                 from_entry=round(from_entry, 4),
             )
             return self._result(
@@ -164,6 +182,70 @@ class StopLossEngine:
             )
 
         return self._result('ok', 'ok', from_entry, from_hwm)
+
+    def _check_short(
+        self,
+        symbol: str,
+        entry_price: float,
+        current_price: float,
+        low_watermark: float,
+    ) -> dict:
+        """Short position: price *rising* = loss.
+
+        PnL for short = (entry - current) / entry
+        Trailing reference is the low-water mark (lowest price since entry).
+        """
+        # Positive from_entry means profit (price fell below entry)
+        from_entry = (entry_price - current_price) / entry_price
+        # Positive from_lwm means price rose back up from the low
+        from_lwm = (low_watermark - current_price) / low_watermark
+
+        # 1. Hard stop — price rose too far above entry
+        if from_entry < self.short_hard_stop_pct:
+            self._log.warning(
+                'hard_stop_triggered',
+                symbol=symbol,
+                direction='short',
+                from_entry=round(from_entry, 4),
+                threshold=self.short_hard_stop_pct,
+            )
+            return self._result(
+                'exit',
+                f'short_hard_stop ({from_entry:.1%} from entry)',
+                from_entry, from_lwm,
+            )
+
+        # 2. Trailing stop — price bounced too far from low-water mark
+        if from_lwm < self.short_trailing_stop_pct:
+            self._log.warning(
+                'trailing_stop_triggered',
+                symbol=symbol,
+                direction='short',
+                from_lwm=round(from_lwm, 4),
+                lwm=low_watermark,
+                threshold=self.short_trailing_stop_pct,
+            )
+            return self._result(
+                'exit',
+                f'short_trailing_stop ({from_lwm:.1%} from LWM {low_watermark:.2f})',
+                from_entry, from_lwm,
+            )
+
+        # 3. Soft warning — minor adverse move from entry
+        if from_entry < self.short_soft_warn_pct:
+            self._log.info(
+                'soft_warning',
+                symbol=symbol,
+                direction='short',
+                from_entry=round(from_entry, 4),
+            )
+            return self._result(
+                'reduce',
+                f'short_soft_warn ({from_entry:.1%} from entry)',
+                from_entry, from_lwm,
+            )
+
+        return self._result('ok', 'ok', from_entry, from_lwm)
 
     # ── portfolio-wide scan ─────────────────────────────────────────
 
@@ -218,7 +300,9 @@ class StopLossEngine:
             if current is None:
                 continue
 
-            # Prefer DB-fresh HWM; fall back to the value in the passed dict.
+            direction = pos.get('direction', 'long')
+
+            # Prefer DB-fresh HWM/LWM; fall back to the value in the passed dict.
             hwm = fresh_hwm.get(
                 symbol,
                 float(pos.get('high_watermark', pos['entry_price'])),
@@ -238,6 +322,7 @@ class StopLossEngine:
                 exits.append({
                     'symbol': symbol,
                     'action': 'exit',
+                    'direction': direction,
                     'reason': result['reason'],
                     'entry_price': float(pos['entry_price']),
                     'current_price': current,
@@ -248,6 +333,7 @@ class StopLossEngine:
                 reductions.append({
                     'symbol': symbol,
                     'action': 'reduce',
+                    'direction': direction,
                     'reason': result['reason'],
                     'reduce_pct': 0.50,
                     'entry_price': float(pos['entry_price']),

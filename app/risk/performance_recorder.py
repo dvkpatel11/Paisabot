@@ -246,8 +246,20 @@ class PerformanceRecorder:
             account = Account.query.filter_by(
                 asset_class=asset_class, is_active=True,
             ).first()
-            return account.id if account else None
-        except Exception:
+            if account:
+                return account.id
+            self._log.warning(
+                'no_active_account',
+                asset_class=asset_class,
+                detail='PerformanceMetric will be saved without account_id',
+            )
+            return None
+        except Exception as exc:
+            self._log.warning(
+                'account_lookup_failed',
+                error=str(exc),
+                asset_class=asset_class,
+            )
             return None
 
     def _update_account(

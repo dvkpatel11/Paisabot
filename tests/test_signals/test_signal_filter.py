@@ -15,7 +15,7 @@ class TestSignalFilter:
 
     def test_tradable_no_issues(self, filter):
         f, redis = filter
-        redis.set('scores:SPY', '{}', ex=900)
+        redis.set('etf:scores:SPY', '{}', ex=900)
         ok, reason = f.is_tradable('SPY', adv_m=50.0, spread_bps=2.0)
         assert ok is True
         assert reason == 'ok'
@@ -70,7 +70,7 @@ class TestSignalFilter:
 
     def test_factor_not_stale_when_key_exists(self, filter):
         f, redis = filter
-        redis.set('scores:SPY', '{}', ex=900)
+        redis.set('etf:scores:SPY', '{}', ex=900)
         ok, reason = f.is_tradable('SPY', adv_m=50.0, spread_bps=2.0)
         assert ok is True
 
@@ -91,7 +91,7 @@ class TestSignalFilter:
 
     def test_custom_adv_threshold_from_redis(self, filter):
         f, redis = filter
-        redis.set('scores:SPY', '{}', ex=900)
+        redis.set('etf:scores:SPY', '{}', ex=900)
         redis.hset('config:universe', 'min_avg_daily_vol_m', '10.0')
         # 15M > custom 10M threshold → passes
         ok, _ = f.is_tradable('SPY', adv_m=15.0, spread_bps=2.0)
@@ -100,6 +100,6 @@ class TestSignalFilter:
     def test_none_adv_skips_check(self, filter):
         """If ADV not provided, gate is skipped."""
         f, redis = filter
-        redis.set('scores:SPY', '{}', ex=900)
+        redis.set('etf:scores:SPY', '{}', ex=900)
         ok, _ = f.is_tradable('SPY', adv_m=None, spread_bps=2.0)
         assert ok is True
