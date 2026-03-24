@@ -63,8 +63,8 @@ if [ -d "venv" ]; then
 fi
 
 # ── Install dev dependencies (CPU torch + transformers) ────
-info "Installing dev dependencies..."
-pip install -q -r requirements-dev.txt
+# info "Installing dev dependencies..."
+# pip install -q -r requirements-dev.txt
 
 # ── Docker: PostgreSQL + Redis ───────────────────────────────────
 if [ "$SKIP_DOCKER" = false ]; then
