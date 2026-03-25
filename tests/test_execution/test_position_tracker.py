@@ -107,6 +107,85 @@ class TestPositionTracker:
         assert float(pos.unrealized_pnl) == 200.0  # (520-500)*10
         assert float(pos.high_watermark) == 520.0
 
+    def test_short_position_opened_on_short_fill(self, db_session, redis_mock):
+        tracker = PositionTracker(db_session, redis_mock)
+        tracker.update_from_fill({
+            'symbol': 'XLF', 'side': 'short', 'status': 'filled',
+            'fill_price': 40.0, 'filled_qty': 50.0, 'broker': 'mock',
+        })
+        pos = Position.query.filter_by(symbol='XLF', status='open').first()
+        assert pos is not None
+        assert pos.direction == 'short'
+        assert float(pos.entry_price) == 40.0
+        assert float(pos.high_watermark) == 40.0  # LWM starts at entry
+
+    def test_short_partial_cover_unrealized_pnl_sign(self, db_session, redis_mock):
+        """Partially covering a profitable short must show positive unrealized PnL."""
+        tracker = PositionTracker(db_session, redis_mock)
+
+        # Open short at 100
+        tracker.update_from_fill({
+            'symbol': 'XLF', 'side': 'short', 'status': 'filled',
+            'fill_price': 100.0, 'filled_qty': 20.0, 'broker': 'mock',
+        })
+
+        # Cover half at 90 (profitable: price fell)
+        tracker.update_from_fill({
+            'symbol': 'XLF', 'side': 'cover', 'status': 'filled',
+            'fill_price': 90.0, 'filled_qty': 10.0, 'broker': 'mock',
+        })
+
+        pos = Position.query.filter_by(symbol='XLF', status='open').first()
+        assert pos is not None
+        assert float(pos.quantity) == 10.0
+        # Realized: (100 - 90) * 10 = +100
+        assert float(pos.realized_pnl) == 100.0
+        # Remaining unrealized: (100 - 90) * 10 = +100 (still profitable)
+        assert float(pos.unrealized_pnl) == 100.0
+
+    def test_short_partial_cover_losing_pnl_sign(self, db_session, redis_mock):
+        """Partially covering a losing short must show negative unrealized PnL."""
+        tracker = PositionTracker(db_session, redis_mock)
+
+        tracker.update_from_fill({
+            'symbol': 'XLE', 'side': 'short', 'status': 'filled',
+            'fill_price': 80.0, 'filled_qty': 20.0, 'broker': 'mock',
+        })
+
+        # Cover half at 85 (losing: price rose against the short)
+        tracker.update_from_fill({
+            'symbol': 'XLE', 'side': 'cover', 'status': 'filled',
+            'fill_price': 85.0, 'filled_qty': 10.0, 'broker': 'mock',
+        })
+
+        pos = Position.query.filter_by(symbol='XLE', status='open').first()
+        assert pos is not None
+        # Realized: (80 - 85) * 10 = -50
+        assert float(pos.realized_pnl) == -50.0
+        # Remaining unrealized: (80 - 85) * 10 = -50 (still losing)
+        assert float(pos.unrealized_pnl) == -50.0
+
+    def test_short_mark_to_market_updates_low_watermark(self, db_session, redis_mock):
+        """mark_to_market should track the MIN price for shorts (best profit point)."""
+        tracker = PositionTracker(db_session, redis_mock)
+
+        tracker.update_from_fill({
+            'symbol': 'XLV', 'side': 'short', 'status': 'filled',
+            'fill_price': 100.0, 'filled_qty': 10.0, 'broker': 'mock',
+        })
+
+        # Price falls to 85 — profitable, watermark should update to 85
+        tracker.mark_to_market({'XLV': 85.0}, 100_000.0)
+        pos = Position.query.filter_by(symbol='XLV').first()
+        assert float(pos.high_watermark) == 85.0    # LWM moved down
+        assert float(pos.unrealized_pnl) == 150.0   # (100-85)*10
+
+        # Price rises back to 90 — watermark should stay at 85 (best level)
+        tracker.mark_to_market({'XLV': 90.0}, 100_000.0)
+        pos = Position.query.filter_by(symbol='XLV').first()
+        assert float(pos.high_watermark) == 85.0    # LWM unchanged
+        assert float(pos.unrealized_pnl) == 100.0   # (100-90)*10
+
     def test_get_positions_summary(self, db_session, redis_mock):
         tracker = PositionTracker(db_session, redis_mock)
 

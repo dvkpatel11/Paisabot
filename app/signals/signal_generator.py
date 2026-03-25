@@ -46,6 +46,12 @@ def classify_signal(
         return 'long'
     elif composite_score >= 0.40:
         return 'neutral'
+    elif (
+        allow_short
+        and regime == 'risk_off'
+        and composite_score < 0.25
+    ):
+        return 'short'
     else:
         # Short candidate — only in risk_off with explicit config opt-in
         if (
@@ -170,7 +176,9 @@ class SignalGenerator:
             tradable, reason = self.filter.is_tradable(symbol, adv_m, spread_bps)
 
             if tradable:
-                signal_type = classify_signal(composite, effective_regime)
+                signal_type = classify_signal(
+                    composite, effective_regime, allow_short=self._allow_short(),
+                )
             else:
                 signal_type = 'blocked'
 
@@ -354,6 +362,17 @@ class SignalGenerator:
                 db.session.rollback()
             except Exception:
                 pass
+
+    def _allow_short(self) -> bool:
+        """Check if shorting is enabled via config."""
+        if self._config is not None:
+            return self._config.get_bool('execution', 'allow_short', False)
+        if self._redis is not None:
+            raw = self._redis.hget('config:execution', 'allow_short')
+            if raw is not None:
+                decoded = raw.decode() if isinstance(raw, bytes) else raw
+                return decoded.lower() in ('true', '1', 'yes')
+        return False
 
     def _get_account_id(self) -> int | None:
         """Resolve account_id for this asset class (cached)."""

@@ -27,7 +27,6 @@ class PriceBar(db.Model):
             name='uq_bar_symbol_tf_ts',
         ),
         db.Index('ix_price_bars_sym_ts', 'symbol', 'timestamp'),
-        db.Index('ix_price_bars_asset_class', 'asset_class'),
     )
 
     def __repr__(self):

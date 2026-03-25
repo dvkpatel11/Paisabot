@@ -25,7 +25,6 @@ class Signal(db.Model):
 
     __table_args__ = (
         db.Index('ix_signals_sym_time', 'symbol', 'signal_time'),
-        db.Index('ix_signals_asset_class', 'asset_class'),
     )
 
     def __repr__(self):

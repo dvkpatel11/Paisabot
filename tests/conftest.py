@@ -18,6 +18,7 @@ def app():
 def db_session(app):
     """Create a fresh database session for each test with rollback."""
     with app.app_context():
+        _db.drop_all()
         _db.create_all()
         yield _db.session
         _db.session.rollback()

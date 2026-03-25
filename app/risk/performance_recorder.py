@@ -59,13 +59,6 @@ class PerformanceRecorder:
             status='open', asset_class=asset_class,
         ).all()
 
-        # Skip if no positions and no prior history for this asset class
-        prior_exists = PerformanceMetric.query.filter_by(
-            asset_class=asset_class,
-        ).first()
-        if not positions and not prior_exists:
-            return None
-
         total_notional = sum(float(p.notional or 0) for p in positions)
         total_unrealized = sum(float(p.unrealized_pnl or 0) for p in positions)
         total_realized = sum(float(p.realized_pnl or 0) for p in positions)
@@ -142,7 +135,8 @@ class PerformanceRecorder:
         recent_returns.insert(0, daily_return)
         recent_returns = recent_returns[:30]
 
-        sharpe_30d = self._compute_sharpe(recent_returns)
+        rf_rate = self._get_risk_free_rate()
+        sharpe_30d = self._compute_sharpe(recent_returns, risk_free_rate=rf_rate)
         volatility_30d = self._compute_vol(recent_returns)
         var_95 = self._compute_var(recent_returns, portfolio_value)
 
@@ -306,18 +300,39 @@ class PerformanceRecorder:
         except Exception as exc:
             self._log.error('account_update_failed', error=str(exc), asset_class=asset_class)
 
+    # Annual risk-free rate (default 4.5%, matching backtester).
+    # Overridden at runtime from config:risk:risk_free_rate if available.
+    RISK_FREE_RATE = 0.045
+
     @staticmethod
-    def _compute_sharpe(returns: list[float], window: int = 30) -> float | None:
-        """Annualized Sharpe ratio from daily returns."""
+    def _compute_sharpe(
+        returns: list[float],
+        window: int = 30,
+        risk_free_rate: float | None = None,
+    ) -> float | None:
+        """Annualized Sharpe ratio from daily excess returns."""
         if len(returns) < 5:
             return None
+        rf_daily = (risk_free_rate or PerformanceRecorder.RISK_FREE_RATE) / 252
         vals = returns[:window]
-        mean_ret = sum(vals) / len(vals)
-        variance = sum((r - mean_ret) ** 2 for r in vals) / len(vals)
+        n = len(vals)
+        mean_ret = sum(vals) / n
+        variance = sum((r - mean_ret) ** 2 for r in vals) / (n - 1)  # sample variance
         std_ret = math.sqrt(variance)
         if std_ret < 1e-10:
             return None
-        return (mean_ret / std_ret) * math.sqrt(252)
+        return ((mean_ret - rf_daily) / std_ret) * math.sqrt(252)
+
+    def _get_risk_free_rate(self) -> float:
+        """Read annual risk-free rate from Redis config or use default."""
+        if self._redis:
+            raw = self._redis.hget('config:risk', 'risk_free_rate')
+            if raw is not None:
+                try:
+                    return float(raw.decode() if isinstance(raw, bytes) else raw)
+                except (ValueError, TypeError):
+                    pass
+        return self.RISK_FREE_RATE
 
     @staticmethod
     def _compute_vol(returns: list[float], window: int = 30) -> float | None:
@@ -325,8 +340,9 @@ class PerformanceRecorder:
         if len(returns) < 5:
             return None
         vals = returns[:window]
-        mean_ret = sum(vals) / len(vals)
-        variance = sum((r - mean_ret) ** 2 for r in vals) / len(vals)
+        n = len(vals)
+        mean_ret = sum(vals) / n
+        variance = sum((r - mean_ret) ** 2 for r in vals) / (n - 1)  # sample variance
         return math.sqrt(variance) * math.sqrt(252)
 
     @staticmethod
@@ -337,8 +353,9 @@ class PerformanceRecorder:
         """Parametric VaR at 95% confidence level."""
         if len(returns) < 5:
             return None
-        mean_ret = sum(returns) / len(returns)
-        variance = sum((r - mean_ret) ** 2 for r in returns) / len(returns)
+        n = len(returns)
+        mean_ret = sum(returns) / n
+        variance = sum((r - mean_ret) ** 2 for r in returns) / (n - 1)  # sample variance
         std_ret = math.sqrt(variance)
         # 95% VaR: negative value representing loss
         return -1.645 * std_ret * portfolio_value

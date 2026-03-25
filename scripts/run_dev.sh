@@ -5,7 +5,7 @@
 # have no profile, so they start by default), runs DB migrations,
 # seeds config, then launches Flask + Celery on the host.
 #
-# Usage:  ./scripts/run_dev.sh [--skip-docker] [--skip-migrate] [--skip-seed]
+# Usage:  ./scripts/run_dev.sh [--skip-docker] [--skip-migrate] [--skip-seed] [--backfill]
 # ──────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -17,18 +17,21 @@ cd "$PROJECT_DIR"
 SKIP_DOCKER=false
 SKIP_MIGRATE=false
 SKIP_SEED=false
+RUN_BACKFILL=false
 
 for arg in "$@"; do
     case "$arg" in
         --skip-docker)  SKIP_DOCKER=true ;;
         --skip-migrate) SKIP_MIGRATE=true ;;
         --skip-seed)    SKIP_SEED=true ;;
+        --backfill)     RUN_BACKFILL=true ;;
         -h|--help)
-            echo "Usage: $0 [--skip-docker] [--skip-migrate] [--skip-seed]"
+            echo "Usage: $0 [--skip-docker] [--skip-migrate] [--skip-seed] [--backfill]"
             echo ""
             echo "  --skip-docker   Don't start/check Docker containers"
             echo "  --skip-migrate  Don't run alembic migrations"
             echo "  --skip-seed     Don't seed config or universe"
+            echo "  --backfill      Also run backfill_history.py (slow, hits Alpaca API)"
             exit 0
             ;;
         *) echo "Unknown flag: $arg"; exit 1 ;;
@@ -60,7 +63,7 @@ if [ -d "venv" ]; then
 fi
 
 # ── Install dev dependencies (CPU torch + transformers) ────
-info "Installing dev dependencies..."
+# info "Installing dev dependencies..."
 # pip install -q -r requirements-dev.txt
 
 # ── Docker: PostgreSQL + Redis ───────────────────────────────────
@@ -123,11 +126,18 @@ if [ "$SKIP_SEED" = false ]; then
     info "Seeding system config..."
     python scripts/seed_config.py
 
+    info "Seeding accounts..."
+    python scripts/seed_accounts.py
+
     info "Seeding ETF universe..."
     python scripts/universe_setup.py
 
-    info "Backfilling historical bars..."
-    python scripts/backfill_history.py
+    if [ "$RUN_BACKFILL" = true ]; then
+        info "Backfilling historical bars (this may take a while)..."
+        python scripts/backfill_history.py
+    else
+        warn "Skipping backfill — run with --backfill to load historical bars"
+    fi
 else
     warn "Skipping seed"
 fi
@@ -135,20 +145,18 @@ fi
 # ── Trap: clean shutdown ─────────────────────────────────────────
 CELERY_PID=""
 BEAT_PID=""
+FLASK_PID=""
 
 cleanup() {
     echo ""
     info "Shutting down..."
-    if [ -n "$CELERY_PID" ] && kill -0 "$CELERY_PID" 2>/dev/null; then
-        kill "$CELERY_PID" 2>/dev/null
-        wait "$CELERY_PID" 2>/dev/null || true
-        info "Celery worker stopped"
-    fi
-    if [ -n "$BEAT_PID" ] && kill -0 "$BEAT_PID" 2>/dev/null; then
-        kill "$BEAT_PID" 2>/dev/null
-        wait "$BEAT_PID" 2>/dev/null || true
-        info "Celery beat stopped"
-    fi
+    for pid_var in FLASK_PID CELERY_PID BEAT_PID; do
+        pid="${!pid_var}"
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null
+            wait "$pid" 2>/dev/null || true
+        fi
+    done
     info "Done. Infrastructure is still running — stop with: docker compose down"
 }
 trap cleanup EXIT INT TERM
@@ -174,4 +182,25 @@ info "Celery beat running (PID $BEAT_PID)"
 # ── Flask dev server (foreground) ────────────────────────────────
 info "Starting Flask dev server on http://localhost:5000"
 echo "────────────────────────────────────────────────────"
-FLASK_CONFIG=development python wsgi.py
+FLASK_CONFIG=development WERKZEUG_RUN_MAIN=true python wsgi.py &
+FLASK_PID=$!
+
+# Wait up to 30s for Flask to accept connections
+echo -n "  Waiting for Flask..."
+for i in $(seq 1 30); do
+    if curl -s http://localhost:5000/api/health >/dev/null 2>&1; then
+        echo " ready"
+        info "Server is up — http://localhost:5000"
+        break
+    fi
+    if [ "$i" -eq 30 ]; then
+        echo ""
+        warn "Flask health check timed out — server may still be starting"
+    fi
+    sleep 1
+    echo -n "."
+done
+
+
+# Bring Flask to foreground so the script blocks until Ctrl-C
+wait "$FLASK_PID"

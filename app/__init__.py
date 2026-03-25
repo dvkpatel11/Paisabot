@@ -65,7 +65,7 @@ def create_app(config_name: str = 'development') -> Flask:
     socketio.init_app(
         app,
         message_queue=app.config['REDIS_URL'],
-        async_mode='eventlet',
+        async_mode='threading' if app.config.get('TESTING') else 'eventlet',
         cors_allowed_origins=cors_origins,
     )
 
@@ -93,14 +93,18 @@ def create_app(config_name: str = 'development') -> Flask:
                     'cdn.socket.io',
                     'cdn.plot.ly',
                     'cdn.jsdelivr.net',
+                    'unpkg.com',
+                    'cdnjs.cloudflare.com',
                 ],
                 'style-src': [
                     "'self'",
                     "'unsafe-inline'",
                     'fonts.googleapis.com',
                     'cdn.jsdelivr.net',
+                    'unpkg.com',
+                    'cdnjs.cloudflare.com',
                 ],
-                'font-src': ["'self'", 'fonts.gstatic.com'],
+                'font-src': ["'self'", 'fonts.gstatic.com', 'cdnjs.cloudflare.com'],
                 'connect-src': ["'self'", 'ws:', 'wss:'],
                 'img-src': ["'self'", 'data:'],
             }
@@ -163,27 +167,19 @@ def _register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(400)
     def bad_request(e):
-        if _wants_json():
-            return jsonify(error='bad_request', message=str(e)), 400
-        return render_template('errors/400.html'), 400
+        return jsonify(error='bad_request', message=str(e)), 400
 
     @app.errorhandler(403)
     def forbidden(e):
-        if _wants_json():
-            return jsonify(error='forbidden', message=str(e)), 403
-        return render_template('errors/403.html'), 403
+        return jsonify(error='forbidden', message=str(e)), 403
 
     @app.errorhandler(404)
     def not_found(e):
-        if _wants_json():
-            return jsonify(error='not_found', message=str(e)), 404
-        return render_template('errors/404.html'), 404
+        return jsonify(error='not_found', message=str(e)), 404
 
     @app.errorhandler(500)
     def internal_error(e):
-        if _wants_json():
-            return jsonify(error='internal_server_error', message='An unexpected error occurred'), 500
-        return render_template('errors/500.html'), 500
+        return jsonify(error='internal_server_error', message='An unexpected error occurred'), 500
 
 
 def _configure_logging():

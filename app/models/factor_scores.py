@@ -27,7 +27,6 @@ class FactorScore(db.Model):
 
     __table_args__ = (
         db.Index('ix_factor_scores_sym_time', 'symbol', 'calc_time'),
-        db.Index('ix_factor_scores_asset_class', 'asset_class'),
     )
 
     def __repr__(self):

@@ -33,6 +33,23 @@ class StopLossEngine:
 
     # ── thresholds ──────────────────────────────────────────────────
 
+    # Default thresholds per direction.
+    # Shorts use TIGHTER stops than longs: upside risk on a short is
+    # theoretically unlimited, gap-ups and squeezes are faster and more
+    # violent than sell-offs, so we cut losing shorts faster by design.
+    _DEFAULTS = {
+        'long': {
+            'position_stop_loss': -0.05,
+            'position_trailing_stop': -0.08,
+            'position_soft_warn': -0.03,
+        },
+        'short': {
+            'position_stop_loss': -0.04,    # tighter than long -5%
+            'position_trailing_stop': -0.06, # tighter than long -8%
+            'position_soft_warn': -0.025,   # tighter than long -3%
+        },
+    }
+
     def _threshold(self, key: str, default: float) -> float:
         if self._config is not None:
             return self._config.get_float('risk', key, default)
@@ -92,7 +109,7 @@ class StopLossEngine:
 
         Returns:
             dict with keys: action ('exit'|'reduce'|'ok'),
-            reason, from_entry, from_hwm.
+            reason, from_entry, from_hwm, direction.
         """
         if entry_price <= 0 or high_watermark <= 0:
             return self._result('ok', 'invalid_price', 0.0, 0.0)
@@ -112,7 +129,7 @@ class StopLossEngine:
         from_entry = (current_price - entry_price) / entry_price
         from_hwm = (current_price - high_watermark) / high_watermark
 
-        # 1. Hard stop — -5% from entry
+        # 1. Hard stop
         if from_entry < self.hard_stop_pct:
             self._log.warning(
                 'hard_stop_triggered',
@@ -127,7 +144,7 @@ class StopLossEngine:
                 from_entry, from_hwm,
             )
 
-        # 2. Trailing stop — -8% from high-water mark
+        # 2. Trailing stop
         if from_hwm < self.trailing_stop_pct:
             self._log.warning(
                 'trailing_stop_triggered',
@@ -143,7 +160,7 @@ class StopLossEngine:
                 from_entry, from_hwm,
             )
 
-        # 3. Soft warning — -3% from entry → reduce 50%
+        # 3. Soft warning → reduce 50%
         if from_entry < self.soft_warn_pct:
             self._log.info(
                 'soft_warning',
@@ -283,6 +300,8 @@ class StopLossEngine:
                 symbol,
                 float(pos.get('high_watermark', pos['entry_price'])),
             )
+
+            direction = pos.get('direction', 'long')
 
             result = self.check_position(
                 symbol=symbol,
